@@ -42,3 +42,17 @@ def test_rejects_file_as_destination(tmp_path):
     destination.write_text("x")
     with pytest.raises(StorageValidationError):
         validate_paths([source], destination)
+
+
+def test_rejects_destination_path_through_symlink(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = tmp_path / "linked-destination"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is not permitted on this platform")
+    with pytest.raises(StorageValidationError, match="symlink or junction"):
+        validate_paths([source], link / "organized")

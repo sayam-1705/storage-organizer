@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import ctypes
+import errno
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from .hashing import sha256_file
@@ -10,6 +13,48 @@ from .models import PlannedFile, RunSummary
 
 class TransferError(RuntimeError):
     pass
+
+
+def _rename_noreplace(source: Path, target: Path) -> bool:
+    """Atomically rename without replacing an existing target where the OS supports it.
+
+    Returns False only when the platform has no supported no-replace rename primitive.
+    """
+    if os.name == "nt":
+        # Windows MoveFile/rename semantics fail when the destination already exists.
+        os.rename(source, target)
+        return True
+
+    if sys.platform.startswith("linux"):
+        libc = ctypes.CDLL(None, use_errno=True)
+        renameat2 = getattr(libc, "renameat2", None)
+        if renameat2 is not None:
+            renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+            renameat2.restype = ctypes.c_int
+            result = renameat2(-100, os.fsencode(source), -100, os.fsencode(target), 1)  # AT_FDCWD, RENAME_NOREPLACE
+            if result == 0:
+                return True
+            error = ctypes.get_errno()
+            if error == errno.EEXIST:
+                raise FileExistsError(error, os.strerror(error), str(target))
+            if error not in {errno.ENOSYS, errno.EINVAL, getattr(errno, "EOPNOTSUPP", errno.EINVAL)}:
+                raise OSError(error, os.strerror(error), str(target))
+
+    if sys.platform == "darwin":
+        libc = ctypes.CDLL(None, use_errno=True)
+        renamex_np = getattr(libc, "renamex_np", None)
+        if renamex_np is not None:
+            renamex_np.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+            renamex_np.restype = ctypes.c_int
+            result = renamex_np(os.fsencode(source), os.fsencode(target), 0x00000004)  # RENAME_EXCL
+            if result == 0:
+                return True
+            error = ctypes.get_errno()
+            if error == errno.EEXIST:
+                raise FileExistsError(error, os.strerror(error), str(target))
+            if error not in {errno.ENOSYS, errno.EINVAL, getattr(errno, "EOPNOTSUPP", errno.EINVAL)}:
+                raise OSError(error, os.strerror(error), str(target))
+    return False
 
 
 def _publish_without_overwrite(temp_path: Path, target: Path) -> None:
@@ -22,7 +67,20 @@ def _publish_without_overwrite(temp_path: Path, target: Path) -> None:
     except FileExistsError:
         raise
     except (OSError, NotImplementedError):
-        # Fallback for filesystems without hard-link support. O_EXCL prevents overwrite.
+        # Hard links are unavailable on some removable filesystems. Prefer an atomic
+        # no-replace rename, supported on Windows, Linux, and macOS.
+        try:
+            if _rename_noreplace(temp_path, target):
+                return
+        except FileExistsError:
+            raise
+        except OSError as exc:
+            if exc.errno not in {errno.ENOSYS, errno.EINVAL, getattr(errno, "EOPNOTSUPP", errno.EINVAL)}:
+                raise
+
+        # Last-resort fallback for unusual platforms without a no-replace rename API.
+        # O_EXCL still prevents overwriting, although a power loss can expose a partial
+        # final file on such platforms. The source remains intact and retry is safe.
         fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
         try:
             with os.fdopen(fd, "wb") as output, temp_path.open("rb") as source:
@@ -38,10 +96,50 @@ def _publish_without_overwrite(temp_path: Path, target: Path) -> None:
         temp_path.unlink(missing_ok=True)
 
 
+def _fsync_directory(path: Path) -> None:
+    """Best-effort sync of a directory entry after publishing a copied file."""
+    if os.name == "nt":
+        return
+    descriptor = None
+    try:
+        descriptor = os.open(path, os.O_RDONLY)
+        os.fsync(descriptor)
+    except OSError:
+        # Some removable/network filesystems do not support directory fsync.
+        pass
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _reject_symlinked_parents(path: Path) -> None:
+    """Defend against a symlink/junction inserted after path validation."""
+    current = path
+    while current != current.parent:
+        if current.exists():
+            try:
+                is_junction = getattr(current, "is_junction", None)
+                if current.is_symlink() or (is_junction is not None and is_junction()):
+                    raise TransferError(f"Refusing to write through symlink/junction: {current}")
+            except OSError as exc:
+                raise TransferError(f"Cannot validate destination path {current}: {exc}") from exc
+        current = current.parent
+
+
 def copy_one(item: PlannedFile, verify_hash: bool = True) -> str:
     if item.action == "skip_identical":
         return "skipped"
+    if item.source.is_symlink() or not item.source.is_file():
+        raise TransferError(f"Source is no longer a regular, non-symlink file: {item.source}")
+    _reject_symlinked_parents(item.destination.parent)
+    try:
+        is_junction = getattr(item.destination, "is_junction", None)
+        if item.destination.is_symlink() or (is_junction is not None and is_junction()):
+            raise TransferError(f"Refusing to write to a symlink/junction destination: {item.destination}")
+    except OSError as exc:
+        raise TransferError(f"Cannot validate destination {item.destination}: {exc}") from exc
     item.destination.parent.mkdir(parents=True, exist_ok=True)
+    _reject_symlinked_parents(item.destination.parent)
     # A final preflight check handles changes made since the plan was created.
     if item.destination.exists():
         if item.destination.is_file() and sha256_file(item.destination) == item.sha256:
@@ -62,14 +160,15 @@ def copy_one(item: PlannedFile, verify_hash: bool = True) -> str:
             raise TransferError(f"Hash verification failed for {item.source}")
         try:
             _publish_without_overwrite(temp_path, item.destination)
+            _fsync_directory(item.destination.parent)
         except FileExistsError:
             if item.destination.is_file() and sha256_file(item.destination) == item.sha256:
                 return "skipped"
             raise TransferError(f"Destination conflict; refusing to overwrite: {item.destination}")
         if verify_hash and sha256_file(item.destination) != item.sha256:
-            # Preserve source and remove only the newly published invalid copy.
-            item.destination.unlink(missing_ok=True)
-            raise TransferError(f"Final verification failed for {item.destination}")
+            # Do not delete a file here: another process may have touched the destination
+            # after publication. Preserve evidence and report the mismatch for user review.
+            raise TransferError(f"Final verification failed for {item.destination}; file left in place for inspection")
         try:
             shutil.copystat(item.source, item.destination, follow_symlinks=False)
         except (OSError, NotImplementedError):

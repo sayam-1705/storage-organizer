@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import unicodedata
 from .classifier import classify
 from .hashing import sha256_file
 from .metadata import resolve_datetime
@@ -9,42 +10,40 @@ from .models import PlannedFile
 from .scanner import scan_files
 
 MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
+_WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+
+
+def _path_key(path: Path) -> str:
+    """Approximate case/Unicode-insensitive filesystem matching for planned names."""
+    return unicodedata.normalize("NFC", str(path)).casefold()
+
+
+def _portable_filename(filename: str) -> str:
+    """Make a source filename valid on Windows, macOS, and common removable drives."""
+    invalid = set('<>:"/\\|?*')
+    safe = "".join("_" if char in invalid or ord(char) < 32 else char for char in filename)
+    safe = safe.rstrip(" .")
+    if not safe or safe in {".", ".."}:
+        safe = "unnamed-file"
+    stem = Path(safe).stem
+    if stem.rstrip(" .").upper() in _WINDOWS_RESERVED:
+        safe = f"_{safe}"
+    # Keep individual path components below common filesystem limits while preserving
+    # the extension. A collision is resolved later by the standard suffix strategy.
+    if len(safe.encode("utf-8", errors="ignore")) > 240:
+        suffix = Path(safe).suffix
+        stem = Path(safe).stem
+        budget = max(1, 230 - len(suffix.encode("utf-8", errors="ignore")))
+        while len(stem.encode("utf-8", errors="ignore")) > budget:
+            stem = stem[:-1]
+        safe = stem + suffix
+    return safe
 
 
 def _destination_for(root: Path, category: str, stamp: datetime | None, filename: str, unknown_folder: str) -> Path:
     if stamp is None:
         return root / category / unknown_folder / filename
     return root / category / f"{stamp.year:04d}" / MONTHS[stamp.month - 1] / filename
-
-
-def _next_available(path: Path, digest: str, known_hashes: dict[str, str], template: str) -> tuple[Path, bool]:
-    """Return a non-conflicting name and whether identical content is already present."""
-    if not path.exists():
-        return path, False
-    try:
-        existing_hash = known_hashes.get(str(path))
-        if existing_hash is None:
-            existing_hash = sha256_file(path)
-            known_hashes[str(path)] = existing_hash
-        if existing_hash == digest:
-            return path, True
-    except OSError:
-        pass
-    number = 1
-    while number < 1_000_000:
-        name = template.format(stem=path.stem, number=number, suffix=path.suffix)
-        candidate = path.with_name(name)
-        if not candidate.exists():
-            return candidate, False
-        try:
-            candidate_hash = known_hashes.get(str(candidate)) or sha256_file(candidate)
-            known_hashes[str(candidate)] = candidate_hash
-            if candidate_hash == digest:
-                return candidate, True
-        except OSError:
-            pass
-        number += 1
-    raise RuntimeError(f"Could not find a collision-free filename for {path}")
 
 
 def build_plan(sources: list[Path], destination: Path, config: dict) -> list[PlannedFile]:
@@ -57,6 +56,10 @@ def build_plan(sources: list[Path], destination: Path, config: dict) -> list[Pla
     known_hashes: dict[str, str] = {}
     if destination.exists():
         for path in scan_files([destination], include_hidden=True):
+            # A crash can leave a verified-but-unpublished temporary file. Never treat it
+            # as a completed destination copy; the next run should retry the intended name.
+            if path.name.startswith(".storage-organizer-") and path.name.endswith(".partial"):
+                continue
             try:
                 digest = sha256_file(path)
                 known_hashes[str(path)] = digest
@@ -73,7 +76,7 @@ def build_plan(sources: list[Path], destination: Path, config: dict) -> list[Pla
         except OSError as exc:
             raise OSError(f"Unable to read source file: {source}: {exc}") from exc
         category = classify(source)
-        target = _destination_for(destination, category, stamp, source.name, unknown)
+        target = _destination_for(destination, category, stamp, _portable_filename(source.name), unknown)
         year = stamp.year if stamp else None
         month = MONTHS[stamp.month - 1] if stamp else None
         if digest in destination_hashes or digest in planned_hashes:
@@ -83,7 +86,7 @@ def build_plan(sources: list[Path], destination: Path, config: dict) -> list[Pla
         # Resolve existing-file and same-run name collisions without overwriting.
         original_target = target
         number = 1
-        while target.exists() or str(target).casefold() in reserved_paths:
+        while target.exists() or _path_key(target) in reserved_paths:
             if target.exists():
                 try:
                     existing_hash = known_hashes.get(str(target)) or sha256_file(target)
@@ -101,7 +104,7 @@ def build_plan(sources: list[Path], destination: Path, config: dict) -> list[Pla
         if target is None:
             plan.append(PlannedFile(source, original_target, category, year, month, digest, "skip_identical", "Identical content already exists at target"))
             continue
-        reserved_paths.add(str(target).casefold())
+        reserved_paths.add(_path_key(target))
         planned_hashes.add(digest)
         plan.append(PlannedFile(source, target, category, year, month, digest, "copy", "Ready to copy"))
     return plan

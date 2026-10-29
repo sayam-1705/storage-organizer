@@ -8,6 +8,7 @@ build/
 dist/
 .pytest_cache/
 .coverage
+coverage.xml
 htmlcov/
 
 # Local application data
@@ -15,13 +16,19 @@ htmlcov/
 config.local.toml
 logs/
 *.log
+*.partial
 
-# User media and generated test data: do not commit personal media or image assets
+# Do not commit user media, documents, archives, or generated mock assets
 *.jpg
 *.jpeg
+*.jpe
+*.jfif
 *.png
+*.apng
 *.gif
 *.webp
+*.avif
+*.jxl
 *.bmp
 *.tif
 *.tiff
@@ -29,32 +36,66 @@ logs/
 *.heif
 *.raw
 *.dng
+*.cr2
+*.nef
+*.arw
+*.orf
+*.rw2
+*.jp2
+*.tga
+*.ppm
+*.pgm
+*.pbm
+*.svg
+*.ico
+*.icns
+*.psd
+*.xcf
 *.mp4
 *.m4v
 *.mov
 *.mkv
 *.avi
 *.webm
+*.mpeg
+*.mpg
+*.3gp
+*.mts
+*.m2ts
 *.mp3
 *.wav
 *.flac
+*.aac
 *.m4a
 *.ogg
+*.opus
+*.wma
+*.aiff
 *.pdf
 *.doc
 *.docx
+*.odt
+*.rtf
 *.xls
 *.xlsx
+*.ods
 *.ppt
 *.pptx
+*.odp
 *.zip
 *.7z
 *.rar
 *.tar
 *.gz
+*.bz2
+*.xz
+*.tgz
 
-# OS/editor
+# OS/editor and crash dumps
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+core
+core.*
+*.dmp

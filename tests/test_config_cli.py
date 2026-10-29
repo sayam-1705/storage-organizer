@@ -40,3 +40,24 @@ def test_cli_rejects_overlapping_paths(tmp_path, make_file, capsys):
     make_file(source / "a.txt")
     assert main(["preview", "--source", str(source), "--destination", str(source / "out")]) == 2
     assert "must not overlap" in capsys.readouterr().err
+
+
+def test_rejects_path_traversal_in_unknown_date_folder(tmp_path):
+    config_path = tmp_path / "unsafe.toml"
+    config_path.write_text('[organization]\nunknown_date_folder = "../outside"\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="safe folder name"):
+        load_config(config_path)
+
+
+def test_rejects_invalid_rename_template(tmp_path):
+    config_path = tmp_path / "unsafe-template.toml"
+    config_path.write_text('[duplicates]\nrename_template = "../{stem} ({number}){suffix}"\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid filename characters"):
+        load_config(config_path)
+
+
+def test_rejects_unknown_configuration_keys(tmp_path):
+    config_path = tmp_path / "typo.toml"
+    config_path.write_text('[transfer]\nverfiy_hash = false\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="Unknown key"):
+        load_config(config_path)

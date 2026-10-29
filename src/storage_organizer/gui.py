@@ -1,9 +1,16 @@
 """Optional PySide6 desktop interface. Install with: pip install .[gui]."""
 from __future__ import annotations
 
+import os
 import sys
 import threading
 from pathlib import Path
+
+# On some GNOME/Wayland installations, Qt's auto-selected desktop theme plugin
+# crashes when a legacy xsettings schema key is missing. Use Qt's generic theme
+# by default on Linux; respect an explicit user override.
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("QT_QPA_PLATFORMTHEME", "generic")
 
 try:
     from PySide6.QtCore import QObject, QThread, Signal
@@ -98,8 +105,6 @@ class MainWindow(QMainWindow):
             self.sources = [Path(folder)]
             self.source_label.setText(folder)
             save_preferences(source=folder)
-            # Multiple source paths are also supported by the engine and CLI.
-            QMessageBox.information(self, "Add more sources", "To add multiple source folders, use the CLI with repeated --source arguments. The GUI currently selects one source at a time.")
 
     def select_destination(self):
         folder = QFileDialog.getExistingDirectory(self, "Select destination root")

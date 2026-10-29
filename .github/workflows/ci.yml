@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.11', '3.12', '3.13']
+        python-version: ['3.11', '3.12', '3.13', '3.14']
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -25,11 +25,23 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - name: Install package and test tools
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[test]"
+      - name: Install package, GUI, and test tools
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[test,gui]" build
       - name: Run unit and integration tests using generated mock data
-        run: python -m pytest --cov=storage_organizer --cov-report=term-missing
-      - name: Ensure no media or personal files are tracked
-        run: python scripts/check_no_media_assets.py
+        run: python -m pytest --cov=storage_organizer --cov-report=term-missing --cov-report=xml
       - name: Smoke-test CLI
         run: storage-organizer --help
+      - name: End-to-end smoke test with generated synthetic files
+        run: python scripts/run_demo_smoke.py
+      - name: Smoke-test GUI initialization without opening a window
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -c "import storage_organizer.gui; from PySide6.QtWidgets import QApplication; app = QApplication([]); print('Qt GUI initialization passed')"
+      - name: Compile source files
+        run: python -m compileall -q src
+      - name: Build source and wheel distributions
+        run: python -m build
+      - name: Check installed dependency consistency
+        run: python -m pip check
+      - name: Ensure no image, media, personal, or binary fixture assets are tracked
+        run: python scripts/check_no_media_assets.py

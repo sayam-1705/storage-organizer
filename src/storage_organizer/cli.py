@@ -7,6 +7,7 @@ from pathlib import Path
 from . import __version__
 from .logging_setup import setup_logging
 from .organizer import create_plan, organize
+from .config import load_config
 from .storage import StorageValidationError
 
 
@@ -36,7 +37,9 @@ def main(argv: list[str] | None = None) -> int:
                 for item in plan:
                     print(f"[{item.action.upper()}] {item.source} -> {item.destination} ({item.reason})")
             return 0
-        logger = setup_logging(verbose=args.verbose)
+        config = load_config(args.config)
+        configured_log_dir = config.get("logging", {}).get("directory")
+        logger = setup_logging(Path(configured_log_dir).expanduser() if configured_log_dir else None, verbose=args.verbose)
         def progress(done, total, item, summary):
             if not args.json:
                 print(f"[{done}/{total}] {item.source.name}")

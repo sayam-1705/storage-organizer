@@ -1,0 +1,12 @@
+# Changelog
+
+## 1.0.1 — Production-readiness hardening
+
+- Reject unsafe date-fallback folder names, invalid rename templates, unknown configuration sections, and unknown configuration keys.
+- Detect destination symlinks/junctions before planning and recheck destination paths before writing.
+- Recheck source file type immediately before copying and avoid deleting a destination file after a verification mismatch.
+- Add no-overwrite atomic publication paths for Windows, Linux, and macOS where supported, with a guarded fallback for unusual platforms/filesystems.
+- Ignore stale temporary partial files during duplicate detection so a crash cannot make a temporary artifact look like a completed copy.
+- Normalize non-portable filenames and improve collision matching for case/Unicode-insensitive filesystems.
+- Set Qt's generic platform theme by default on Linux to avoid a known GNOME xsettings schema startup crash; explicit user overrides are respected.
+- Expand tests, add GUI smoke checks to cross-platform CI, test package builds, and broaden the tracked-media guard.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "storage-organizer"
-version = "1.0.0"
+version = "1.0.1"
 description = "Offline, cross-platform organizer for files on local and removable storage"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,3 +32,5 @@ testpaths = ["tests"]
 [tool.coverage.run]
 source = ["storage_organizer"]
 branch = true
+# GUI startup is smoke-tested in CI; line-level GUI behavior is a separate UI-test concern.
+omit = ["src/storage_organizer/gui.py", "src/storage_organizer/__main__.py"]

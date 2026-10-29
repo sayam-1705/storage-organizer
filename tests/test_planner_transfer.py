@@ -140,3 +140,124 @@ def test_metadata_date_is_preferred_and_modified_policy_skips_metadata(tmp_path,
     monkeypatch.setattr(metadata, "embedded_datetime", lambda _path: embedded)
     assert metadata.resolve_datetime(source, "metadata_then_modified") == embedded
     assert metadata.resolve_datetime(source, "modified").year == 2025
+
+
+def test_crash_leftover_partial_does_not_count_as_completed_duplicate(tmp_path, make_file):
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    make_file(source / "notes.txt", b"recover me")
+    make_file(destination / ".storage-organizer-crash.partial", b"recover me")
+    plan = build_plan([source], destination, config_copy())
+    assert plan[0].action == "copy"
+    summary = execute_plan(plan)
+    assert summary.copied == 1
+    assert (destination / "Documents" / "2025" / "March" / "notes.txt").read_bytes() == b"recover me"
+
+
+def test_portable_filename_rules_are_applied(tmp_path, make_file):
+    from storage_organizer.planner import build_plan
+    source = tmp_path / "source"
+    make_file(source / "CON.txt", b"reserved name")
+    plan = build_plan([source], tmp_path / "destination", config_copy())
+    assert plan[0].destination.name == "_CON.txt"
+
+
+def test_transfer_refuses_destination_parent_symlink_inserted_after_plan(tmp_path, make_file):
+    import pytest
+    from storage_organizer.transfer import TransferError, copy_one
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    make_file(source / "photo.jpg", b"photo")
+    plan = build_plan([source], destination, config_copy())
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    destination.mkdir(parents=True)
+    target_category = destination / "Photos"
+    try:
+        target_category.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is not permitted on this platform")
+    with pytest.raises(TransferError, match="symlink/junction"):
+        copy_one(plan[0])
+    assert list(outside.iterdir()) == []
+
+
+def test_invalid_cross_platform_filename_is_sanitized(tmp_path, make_file):
+    source = tmp_path / "source"
+    make_file(source / "bad:name.txt", b"content")
+    plan = build_plan([source], tmp_path / "destination", config_copy())
+    assert plan[0].destination.name == "bad_name.txt"
+
+
+def test_transfer_refuses_symlink_as_final_destination(tmp_path, make_file):
+    import pytest
+    from storage_organizer.transfer import TransferError, copy_one
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    outside = tmp_path / "outside.txt"
+    make_file(source / "note.txt", b"new")
+    make_file(outside, b"outside stays unchanged")
+    plan = build_plan([source], destination, config_copy())
+    target = plan[0].destination
+    target.parent.mkdir(parents=True)
+    try:
+        target.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is not permitted on this platform")
+    with pytest.raises(TransferError, match="symlink/junction destination"):
+        copy_one(plan[0])
+    assert outside.read_bytes() == b"outside stays unchanged"
+
+
+def test_final_verification_failure_does_not_delete_destination_or_source(tmp_path, make_file, monkeypatch):
+    import pytest
+    import storage_organizer.transfer as transfer
+    from storage_organizer.transfer import TransferError
+    source = tmp_path / "source"
+    original = make_file(source / "note.txt", b"expected")
+    destination = tmp_path / "destination"
+    plan = build_plan([source], destination, config_copy())
+    expected_digest = plan[0].sha256
+    real_hash = transfer.sha256_file
+
+    def controlled_hash(path):
+        if path == plan[0].destination:
+            return "not-the-expected-hash"
+        if path.suffix == ".partial":
+            return expected_digest
+        return real_hash(path)
+
+    monkeypatch.setattr(transfer, "sha256_file", controlled_hash)
+    with pytest.raises(TransferError, match="left in place for inspection"):
+        transfer.copy_one(plan[0])
+    assert original.read_bytes() == b"expected"
+    assert plan[0].destination.exists()
+
+
+def test_atomic_publish_falls_back_when_hardlinks_are_unavailable(tmp_path, monkeypatch):
+    import errno
+    import storage_organizer.transfer as transfer
+    temp_path = tmp_path / ".storage-organizer-test.partial"
+    target = tmp_path / "published.bin"
+    temp_path.write_bytes(b"verified bytes")
+
+    def no_hardlinks(*_args, **_kwargs):
+        raise OSError(errno.EOPNOTSUPP, "hard links unsupported")
+
+    monkeypatch.setattr(transfer.os, "link", no_hardlinks)
+    transfer._publish_without_overwrite(temp_path, target)
+    assert target.read_bytes() == b"verified bytes"
+    assert not temp_path.exists()
+
+
+def test_atomic_publish_never_overwrites_existing_target(tmp_path):
+    import pytest
+    from storage_organizer.transfer import _publish_without_overwrite
+    temp_path = tmp_path / ".storage-organizer-test.partial"
+    target = tmp_path / "published.bin"
+    temp_path.write_bytes(b"new bytes")
+    target.write_bytes(b"existing bytes")
+    with pytest.raises(FileExistsError):
+        _publish_without_overwrite(temp_path, target)
+    assert target.read_bytes() == b"existing bytes"
+    assert temp_path.exists()

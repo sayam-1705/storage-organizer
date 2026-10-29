@@ -5,10 +5,12 @@ import sys
 from pathlib import PurePosixPath
 
 FORBIDDEN = {
-    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".heic", ".heif",
-    ".raw", ".dng", ".mp4", ".m4v", ".mov", ".mkv", ".avi", ".webm", ".mp3", ".wav",
-    ".flac", ".m4a", ".ogg", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-    ".zip", ".7z", ".rar", ".tar", ".gz",
+    ".jpg", ".jpeg", ".jfif", ".png", ".gif", ".webp", ".avif", ".jxl", ".bmp", ".tif", ".tiff", ".heic", ".heif", ".svg", ".ico", ".icns", ".psd", ".xcf",
+    ".raw", ".dng", ".cr2", ".nef", ".arw", ".orf", ".rw2", ".jpe", ".jp2", ".apng", ".tga", ".ppm", ".pgm", ".pbm",
+    ".mp4", ".m4v", ".mov", ".mkv", ".avi", ".webm", ".mpeg", ".mpg", ".3gp", ".mts", ".m2ts",
+    ".mp3", ".wav", ".flac", ".aac", ".m4a", ".ogg", ".opus", ".wma", ".aiff",
+    ".pdf", ".doc", ".docx", ".odt", ".rtf", ".xls", ".xlsx", ".ods", ".ppt", ".pptx", ".odp",
+    ".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz",
 }
 
 

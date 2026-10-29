@@ -9,6 +9,7 @@ An offline, cross-platform utility that copies files from user-selected physical
 - **No silent overwrites:** identical content is skipped; name conflicts are renamed.
 - **Verification:** copies are checked with SHA-256 by default.
 - **No overlapping source/destination:** paths are validated to prevent recursive self-processing.
+- **Symlink-aware writes:** destination symlinks/junctions and non-portable filename conflicts are guarded against.
 - **Offline:** optional metadata tools are local programs/libraries; no network calls are made.
 
 ## Requirements
@@ -95,6 +96,10 @@ python -m pytest --cov=storage_organizer --cov-report=term-missing
 ```
 
 CI runs these tests on Windows, macOS, and Ubuntu for Python 3.11, 3.12, and 3.13, then smoke-tests the CLI. The tests exercise classification, recursive scanning, path safety, dry-run, category/date routing, duplicates, filename conflicts, copy verification, repeat runs, configuration validation, and CLI output.
+
+## Production-readiness checklist
+
+See [docs/production-readiness.md](docs/production-readiness.md) for the release checklist, safeguards, and remaining platform/filesystem limitations. CI tests Ubuntu, Windows, and macOS on Python 3.11–3.14, including a headless Qt initialization smoke test. A passing CI run still does not replace a small physical-drive test on the filesystems you use.
 
 ## Known limitations
 

@@ -6,11 +6,11 @@ The application has two entry points (CLI and optional PySide6 GUI) and one shar
 
 ## Modules
 
-- `storage.py`: path normalization, source/destination overlap validation, free-space helper.
+- `storage.py`: path normalization, source/destination overlap validation, symlink/junction checks, free-space helper.
 - `scanner.py`: recursive traversal without following symlinks; hidden files are configurable.
 - `classifier.py`: extension-to-category mapping.
 - `metadata.py`: optional local metadata extraction and filesystem timestamp fallback.
-- `planner.py`: destination layout and conflict/duplicate planning.
+- `planner.py`: destination layout, cross-platform filename normalization, and conflict/duplicate planning.
 - `hashing.py`: bounded-memory SHA-256.
 - `transfer.py`: temp-file copy, verification, no-overwrite publishing, summaries.
 - `config.py`: TOML config and platform-specific user config directory.
@@ -24,9 +24,9 @@ The application has two entry points (CLI and optional PySide6 GUI) and one shar
 2. Scan source files without following symlinks.
 3. Hash source files and any existing destination files.
 4. Create a plan; no destination directories are created during preview.
-5. For each copy, create the destination directory and write to a temporary file in that directory.
-6. Verify the temporary copy, publish without overwriting an existing path, and verify the published file.
-7. Log the outcome. The source remains unchanged.
+5. For each copy, revalidate the source and destination path, create the destination directory, and write to a temporary file in that directory.
+6. Verify the temporary copy, publish with no-overwrite semantics (atomic where the OS supports it), and verify the published file.
+7. Sync the destination directory where supported, log the outcome, and leave the source unchanged.
 
 ## Persistence
 
