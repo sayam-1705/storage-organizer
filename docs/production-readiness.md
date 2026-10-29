@@ -20,9 +20,9 @@ This checklist records the safeguards covered by the code and automated tests. I
 
 ## Required release checks
 
-- [ ] CI passes on Ubuntu, Windows, and macOS for every Python version in the workflow matrix.
-- [ ] GUI initialization smoke test passes on all CI operating systems.
-- [ ] Review the output of `python -m pytest --cov=storage_organizer --cov-report=term-missing`.
+- [x] CI passes on Ubuntu, Windows, and macOS for every Python version in the workflow matrix.
+- [x] GUI initialization smoke test passes on all CI operating systems.
+- [x] Review the output of `python -m pytest --cov=storage_organizer --cov-report=term-missing`.
 - [ ] Test with a small disposable dataset on each target OS and the actual filesystem types you intend to support.
 - [ ] Test a full destination, unplug/reconnect behavior, and interruption during a large-file copy on expendable storage.
 - [ ] Confirm generated wheel/sdist contents do not contain private files or media assets.

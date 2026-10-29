@@ -2,6 +2,22 @@
 
 An offline, cross-platform utility that copies files from user-selected physical storage (external HDDs/SSDs, USB drives, or folders) into a category/year/month directory structure. It provides a CLI and an optional PySide6 desktop GUI. It does not require a database, cloud service, account, or internet connection at runtime.
 
+## Download
+
+Storage Organizer is distributed through GitHub Releases. No PyPI
+publication is required.
+
+**Latest stable release:** [Download Storage Organizer](https://github.com/sayam-1705/storage-organizer/releases/latest)
+
+The release includes:
+
+- **Python wheel:** Recommended for installation.
+- **Source distribution:** For inspecting or rebuilding the package.
+
+Requirements: Python 3.11 or newer.
+
+For installation instructions, see [Install a Released Version](#install-a-released-version).
+
 ## Safety defaults
 
 - **Copy-only:** original source files are never deleted.
@@ -18,18 +34,83 @@ An offline, cross-platform utility that copies files from user-selected physical
 - Optional GUI: PySide6.
 - Optional richer metadata extraction: Pillow, pypdf, and/or `ffprobe` from FFmpeg. Missing optional metadata tools simply cause the organizer to fall back to the file's modification timestamp.
 
-## Install
+
+## Install a Released Version
+
+Download the latest stable version from the
+[GitHub Releases page](https://github.com/sayam-1705/storage-organizer/releases/latest).
+
+### CLI installation
+
+Create and activate a virtual environment:
 
 ```bash
 python -m venv .venv
-# Linux/macOS
+```
+
+Linux/macOS:
+
+```bash
 source .venv/bin/activate
-# Windows PowerShell: .venv\Scripts\Activate.ps1
+```
+
+Windows PowerShell:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+Install the v1.0.1 wheel directly from GitHub:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install "storage-organizer @ https://github.com/sayam-1705/storage-organizer/releases/download/v1.0.1/storage_organizer-1.0.1-py3-none-any.whl"
+```
+
+Verify the installation:
+
+```bash
+storage-organizer --version
+storage-organizer --help
+```
+
+### Desktop GUI and optional media support
+
+To install the GUI and optional media metadata dependencies:
+
+```bash
+python -m pip install "storage-organizer[gui,media] @ https://github.com/sayam-1705/storage-organizer/releases/download/v1.0.1/storage_organizer-1.0.1-py3-none-any.whl"
+```
+
+Launch the desktop application:
+
+```bash
+storage-organizer-gui
+```
+
+The GUI requires PySide6. On Linux, native Qt system libraries may also be required. Optional media support uses Pillow and pypdf; `ffprobe` must be installed separately if you want to use it.
+
+### Development installation
+
+For contributors working from a local clone:
+
+```bash
+git clone https://github.com/sayam-1705/storage-organizer.git
+cd storage-organizer
+
+python -m venv .venv
 python -m pip install --upgrade pip
 python -m pip install -e ".[test,gui,media]"
 ```
 
-If you only need the CLI, use `python -m pip install -e ".[test]"`. Run without installation using `PYTHONPATH=src python -m storage_organizer --help` (PowerShell: `$env:PYTHONPATH='src'; python -m storage_organizer --help`).
+To run the tests:
+
+```bash
+python -m pytest --cov=storage_organizer --cov-report=term-missing
+```
+
+Released package files are hosted on GitHub. Python dependencies
+may be downloaded from your configured package index during installation.
 
 ## CLI usage
 
@@ -95,11 +176,11 @@ python -m pip install -e ".[test]"
 python -m pytest --cov=storage_organizer --cov-report=term-missing
 ```
 
-CI runs these tests on Windows, macOS, and Ubuntu for Python 3.11, 3.12, and 3.13, then smoke-tests the CLI. The tests exercise classification, recursive scanning, path safety, dry-run, category/date routing, duplicates, filename conflicts, copy verification, repeat runs, configuration validation, and CLI output.
+CI runs these tests on Windows, macOS, and Ubuntu for Python 3.11, 3.12, 3.13, and 3.14, then smoke-tests the CLI. The tests exercise classification, recursive scanning, path safety, dry-run, category/date routing, duplicates, filename conflicts, copy verification, repeat runs, configuration validation, and CLI output.
 
 ## Production-readiness checklist
 
-See [docs/production-readiness.md](docs/production-readiness.md) for the release checklist, safeguards, and remaining platform/filesystem limitations. CI tests Ubuntu, Windows, and macOS on Python 3.11–3.14, including a headless Qt initialization smoke test. A passing CI run still does not replace a small physical-drive test on the filesystems you use.
+See [docs/production-readiness.md](docs/production-readiness.md) for the release checklist, safeguards, and remaining platform/filesystem limitations. CI tests Windows, macOS, and Ubuntu across Python 3.11, 3.12, 3.13, and 3.14. It runs unit and integration tests, CLI and synthetic end-to-end smoke tests, headless Qt GUI initialization, source compilation, distribution builds, dependency consistency checks, and a guard against tracked media or binary fixtures.
 
 ## Known limitations
 
