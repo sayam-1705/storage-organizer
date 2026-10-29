@@ -1,0 +1,232 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install Linux GUI system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libegl1 libgl1 libdbus-1-3 libxkbcommon0 libxcb-cursor0
+
+      - name: Install package, GUI, and test tools
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[test,gui]" build
+
+      - name: Run unit and integration tests
+        run: python -m pytest --cov=storage_organizer --cov-report=term-missing --cov-report=xml
+
+      - name: Smoke-test CLI
+        run: storage-organizer --help
+
+      - name: End-to-end smoke test with generated synthetic files
+        run: python scripts/run_demo_smoke.py
+
+      - name: Smoke-test GUI initialization without opening a window
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_DEBUG_PLUGINS: '1'
+        run: python -c "import storage_organizer.gui; from PySide6.QtWidgets import QApplication; app = QApplication([]); print('Qt GUI initialization passed')"
+
+      - name: Compile source files
+        run: python -m compileall -q src
+
+      - name: Check installed dependency consistency
+        run: python -m pip check
+
+      - name: Ensure no image, media, personal, or binary fixture assets are tracked
+        run: python scripts/check_no_media_assets.py
+
+  build:
+    name: Build and validate release assets
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+
+      - name: Verify tag, project version, and changelog
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          tag = os.environ['RELEASE_TAG']
+          match = re.fullmatch(r'v(\d+\.\d+\.\d+)', tag)
+          if not match:
+              raise SystemExit(
+                  f'Invalid stable release tag {tag!r}; expected vMAJOR.MINOR.PATCH.'
+              )
+
+          version = match.group(1)
+          project = tomllib.loads(Path('pyproject.toml').read_text(encoding='utf-8'))
+          project_version = project['project']['version']
+          if project_version != version:
+              raise SystemExit(
+                  f'Tag version {version} does not match pyproject.toml version {project_version}.'
+              )
+
+          lines = Path('CHANGELOG.md').read_text(encoding='utf-8').splitlines()
+          heading = re.compile(rf'^##\s+{re.escape(version)}(?:\s|$)')
+          start = next((i for i, line in enumerate(lines) if heading.match(line)), None)
+          if start is None:
+              raise SystemExit(f'CHANGELOG.md has no section for version {version}.')
+
+          end = next(
+              (i for i in range(start + 1, len(lines)) if lines[i].startswith('## ')),
+              len(lines),
+          )
+          notes = '\n'.join(lines[start + 1:end]).strip()
+          if not notes or 'TODO' in notes.upper():
+              raise SystemExit(f'Changelog notes for {version} are empty or contain TODO.')
+
+          output = Path('release-assets')
+          output.mkdir(parents=True, exist_ok=True)
+          (output / 'release-notes.md').write_text(notes + '\n', encoding='utf-8')
+          print(f'Validated tag {tag}, project version {project_version}, and changelog entry.')
+          PY
+
+      - name: Build wheel and source distribution
+        run: python -m build
+
+      - name: Validate package metadata and distribution contents
+        run: |
+          python -m twine check dist/*
+          python - <<'PY'
+          from pathlib import Path, PurePosixPath
+          import tarfile
+          import zipfile
+
+          media_extensions = {
+              '.jpg', '.jpeg', '.jpe', '.jfif', '.png', '.apng', '.gif', '.webp',
+              '.avif', '.jxl', '.bmp', '.tif', '.tiff', '.heic', '.heif', '.raw',
+              '.dng', '.cr2', '.nef', '.arw', '.orf', '.rw2', '.jp2', '.tga',
+              '.ppm', '.pgm', '.pbm', '.svg', '.ico', '.icns', '.psd', '.xcf',
+              '.mp4', '.m4v', '.mov', '.mkv', '.avi', '.webm', '.mpeg', '.mpg',
+              '.3gp', '.mts', '.m2ts', '.mp3', '.wav', '.flac', '.aac', '.m4a',
+              '.ogg', '.opus', '.wma', '.aiff', '.pdf', '.doc', '.docx', '.odt',
+              '.rtf', '.xls', '.xlsx', '.ods', '.ppt', '.pptx', '.odp', '.zip',
+              '.7z', '.rar', '.tar', '.gz', '.bz2', '.xz', '.tgz',
+          }
+          sensitive_names = {
+              '.env', '.env.local', '.env.production', 'config.local.toml',
+              'preferences.json', 'organizer.log',
+          }
+          forbidden_dirs = {'.git', '.venv', 'venv', '__pycache__', '.pytest_cache', 'logs'}
+          archives = sorted(Path('dist').glob('*'))
+          if len(archives) < 2:
+              raise SystemExit('Expected both a wheel and a source distribution in dist/.')
+
+          violations = []
+          for archive in archives:
+              if archive.suffix == '.whl':
+                  with zipfile.ZipFile(archive) as package:
+                      names = package.namelist()
+              elif archive.name.endswith('.tar.gz'):
+                  with tarfile.open(archive, 'r:gz') as package:
+                      names = package.getnames()
+              else:
+                  continue
+
+              for name in names:
+                  path = PurePosixPath(name)
+                  parts = {part.lower() for part in path.parts}
+                  if path.name.lower() in sensitive_names:
+                      violations.append(f'{archive.name}: sensitive file name {name}')
+                  if parts.intersection(forbidden_dirs):
+                      violations.append(f'{archive.name}: forbidden directory in {name}')
+                  if path.suffix.lower() in media_extensions:
+                      violations.append(f'{archive.name}: media/document/archive file {name}')
+
+          if violations:
+              raise SystemExit('Distribution-content audit failed:\n' + '\n'.join(violations))
+          print('Distribution-content audit passed.')
+          PY
+          cp dist/*.whl dist/*.tar.gz release-assets/
+
+      - name: Upload validated release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-assets
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated release assets
+        uses: actions/download-artifact@v8
+        with:
+          name: release-assets
+          path: release-assets
+
+      - name: Create GitHub Release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "A GitHub Release already exists for $RELEASE_TAG; refusing to overwrite it."
+            exit 1
+          fi
+
+          shopt -s nullglob
+          wheels=(release-assets/*.whl)
+          sources=(release-assets/*.tar.gz)
+          if [ "${#wheels[@]}" -ne 1 ] || [ "${#sources[@]}" -ne 1 ]; then
+            echo "Expected exactly one wheel and one source distribution."
+            exit 1
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            "${wheels[0]}" "${sources[0]}" \
+            --verify-tag \
+            --title "Storage Organizer $RELEASE_TAG" \
+            --notes-file release-assets/release-notes.md
