@@ -1,0 +1,20 @@
+[organization]
+# Categories are selected from file extensions. Unknown extensions go to Other.
+include_hidden = false
+unknown_date_folder = "UnknownDate"
+# Date policy currently uses reliable embedded dates when supported, then mtime.
+date_policy = "metadata_then_modified"
+
+[transfer]
+# Copy-only: original source files are never deleted.
+verify_hash = true
+# Hashing uses bounded memory and can take time on large drives.
+
+[duplicates]
+# Identical content already anywhere under the destination is skipped.
+strategy = "sha256"
+rename_template = "{stem} ({number}){suffix}"
+
+[logging]
+# Defaults to the OS user data/config location. Set a path to override.
+# directory = ""
