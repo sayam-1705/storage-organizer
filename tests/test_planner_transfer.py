@@ -182,11 +182,12 @@ def test_transfer_refuses_destination_parent_symlink_inserted_after_plan(tmp_pat
     assert list(outside.iterdir()) == []
 
 
-def test_invalid_cross_platform_filename_is_sanitized(tmp_path, make_file):
-    source = tmp_path / "source"
-    make_file(source / "bad:name.txt", b"content")
-    plan = build_plan([source], tmp_path / "destination", config_copy())
-    assert plan[0].destination.name == "bad_name.txt"
+def test_invalid_cross_platform_filename_is_sanitized():
+    from storage_organizer.planner import _portable_filename
+
+    assert _portable_filename("bad:name.txt") == "bad_name.txt"
+    assert _portable_filename("bad|name.txt") == "bad_name.txt"
+    assert _portable_filename("bad?.txt") == "bad_.txt"
 
 
 def test_transfer_refuses_symlink_as_final_destination(tmp_path, make_file):

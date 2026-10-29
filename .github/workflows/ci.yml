@@ -36,6 +36,7 @@ jobs:
       - name: Smoke-test GUI initialization without opening a window
         env:
           QT_QPA_PLATFORM: offscreen
+          QT_DEBUG_PLUGINS: "1"
         run: python -c "import storage_organizer.gui; from PySide6.QtWidgets import QApplication; app = QApplication([]); print('Qt GUI initialization passed')"
       - name: Compile source files
         run: python -m compileall -q src

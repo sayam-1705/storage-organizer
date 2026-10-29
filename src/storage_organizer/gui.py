@@ -14,11 +14,31 @@ if sys.platform.startswith("linux"):
 
 try:
     from PySide6.QtCore import QObject, QThread, Signal
-    from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFormLayout, QHBoxLayout,
-        QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QProgressBar, QTextEdit,
-        QVBoxLayout, QWidget)
-except ImportError as exc:  # pragma: no cover - exercised only without optional GUI dependency
-    raise SystemExit("The GUI requires PySide6. Install it with: python -m pip install 'storage-organizer[gui]'") from exc
+    from PySide6.QtWidgets import (
+        QApplication,
+        QCheckBox,
+        QFileDialog,
+        QFormLayout,
+        QHBoxLayout,
+        QLabel,
+        QLineEdit,
+        QMainWindow,
+        QMessageBox,
+        QPushButton,
+        QProgressBar,
+        QTextEdit,
+        QVBoxLayout,
+        QWidget,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name == "PySide6" or (
+        exc.name and exc.name.startswith("PySide6.")
+    ):
+        raise SystemExit(
+            "The GUI requires PySide6. Install it with: "
+            "python -m pip install 'storage-organizer[gui]'"
+        ) from exc
+    raise
 
 from .organizer import create_plan, organize
 from .logging_setup import setup_logging
