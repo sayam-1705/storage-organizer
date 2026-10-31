@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability reporting
+    url: https://github.com/sayam-1705/storage-organizer/blob/main/SECURITY.md
+    about: Do not post vulnerabilities publicly. Follow the private reporting instructions.
+  - name: Documentation and installation guide
+    url: https://github.com/sayam-1705/storage-organizer#readme
+    about: Check installation, usage, and troubleshooting information before opening a support issue.

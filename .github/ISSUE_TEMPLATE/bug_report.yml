@@ -1,0 +1,76 @@
+name: Bug report
+description: Report a reproducible problem in Storage Organizer.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues first. Never upload private files, personal media, credentials, or unredacted logs. Use synthetic files and redact local usernames and paths.
+  - type: input
+    id: version
+    attributes:
+      label: Storage Organizer version
+      description: For example, 1.0.2 or a commit SHA.
+      placeholder: 1.0.2
+    validations:
+      required: true
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS Apple Silicon
+        - macOS Intel
+        - Ubuntu / Debian Linux
+        - Other Linux distribution
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version (if using the Python package)
+      placeholder: 3.12.0 / Not applicable for native installer
+    validations:
+      required: false
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal sequence using disposable synthetic files.
+      placeholder: |
+        1. Open Storage Organizer.
+        2. Select a synthetic source folder.
+        3. Preview or run the operation.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant error output (redacted)
+      description: Remove usernames, private paths, filenames, tokens, and any personal information.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Data-safety confirmation
+      options:
+        - label: I used disposable test data and removed private information from this report.
+          required: true
