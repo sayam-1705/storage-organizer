@@ -262,3 +262,241 @@ def test_atomic_publish_never_overwrites_existing_target(tmp_path):
         _publish_without_overwrite(temp_path, target)
     assert target.read_bytes() == b"existing bytes"
     assert temp_path.exists()
+
+
+def test_planner_distinguishes_destination_skips_from_source_duplicates(tmp_path, make_file):
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    first = make_file(source / "one.txt", b"repeated source content")
+    second = make_file(source / "two.txt", b"repeated source content")
+    existing = make_file(destination / "archive" / "already.txt", b"already stored")
+    third = make_file(source / "three.txt", b"already stored")
+
+    plan = build_plan([source], destination, config_copy())
+    by_source = {item.source: item for item in plan}
+
+    assert by_source[first].action == "copy"
+    assert by_source[second].action == "skip_identical"
+    assert by_source[second].skip_reason == "source_duplicate"
+    assert by_source[second].duplicate_of == first
+    assert by_source[third].action == "skip_identical"
+    assert by_source[third].skip_reason == "destination"
+    assert by_source[third].duplicate_of == existing
+
+
+def test_execute_plan_returns_one_terminal_result_per_file(tmp_path, make_file):
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    make_file(source / "a-copy.txt", b"unique")
+    make_file(source / "b-duplicate.txt", b"unique")
+    make_file(source / "c-present.txt", b"already there")
+    make_file(destination / "old" / "present.txt", b"already there")
+
+    plan = build_plan([source], destination, config_copy())
+    summary = execute_plan(plan)
+    results = {item.source.name: item for item in summary.files}
+
+    assert summary.scanned == len(plan) == len(summary.files)
+    assert results["a-copy.txt"].status == "copied"
+    assert results["b-duplicate.txt"].status == "duplicate"
+    assert results["b-duplicate.txt"].duplicate_of == results["a-copy.txt"].source
+    assert results["c-present.txt"].status == "skipped"
+    assert summary.copied == 1
+    assert summary.duplicates == 1
+    assert summary.skipped_identical == 1
+    assert summary.failed == 0
+    assert summary.cancelled_files == 0
+    assert summary.scanned == (
+        summary.copied
+        + summary.duplicates
+        + summary.skipped_identical
+        + summary.failed
+        + summary.cancelled_files
+    )
+
+
+def test_execute_plan_records_copying_and_terminal_file_events(tmp_path, make_file):
+    source = tmp_path / "source"
+    make_file(source / "file.txt", b"payload")
+    plan = build_plan([source], tmp_path / "destination", config_copy())
+    events = []
+
+    summary = execute_plan(
+        plan,
+        file_progress=lambda result, done, total, _summary: events.append(
+            (result.status, done, total)
+        ),
+    )
+
+    assert [event[0] for event in events] == ["copying", "copied"]
+    assert events[0][1:] == (0, 1)
+    assert events[1][1:] == (1, 1)
+    assert summary.files[0].status == "copied"
+
+
+def test_execute_plan_records_per_file_error_and_continues(tmp_path, make_file, monkeypatch):
+    import storage_organizer.transfer as transfer
+
+    source = tmp_path / "source"
+    make_file(source / "a-broken.txt", b"broken")
+    make_file(source / "b-good.txt", b"good")
+    plan = build_plan([source], tmp_path / "destination", config_copy())
+    real_copy_one = transfer.copy_one
+
+    def fail_one(item, verify_hash=True):
+        if item.source.name == "a-broken.txt":
+            raise transfer.TransferError("simulated write failure")
+        return real_copy_one(item, verify_hash=verify_hash)
+
+    monkeypatch.setattr(transfer, "copy_one", fail_one)
+    summary = transfer.execute_plan(plan)
+    results = {item.source.name: item for item in summary.files}
+
+    assert results["a-broken.txt"].status == "error"
+    assert "simulated write failure" in results["a-broken.txt"].reason
+    assert str(source / "a-broken.txt") in summary.errors[0]
+    assert results["b-good.txt"].status == "copied"
+    assert summary.failed == 1
+    assert summary.copied == 1
+    assert summary.scanned == 2
+
+
+def test_cancelled_files_are_explicit_in_results(tmp_path, make_file):
+    import threading
+
+    source = tmp_path / "source"
+    make_file(source / "a.txt", b"one")
+    make_file(source / "b.txt", b"two")
+    make_file(source / "c.txt", b"three")
+    plan = build_plan([source], tmp_path / "destination", config_copy())
+    cancel_event = threading.Event()
+    seen = []
+
+    def on_file(result, done, total, _summary):
+        seen.append(result.status)
+        if result.status == "copied":
+            cancel_event.set()
+
+    summary = execute_plan(plan, cancel_event=cancel_event, file_progress=on_file)
+
+    assert summary.cancelled is True
+    assert summary.copied == 1
+    assert summary.cancelled_files == 2
+    assert [result.status for result in summary.files].count("cancelled") == 2
+    assert all(result.reason for result in summary.files)
+    assert summary.scanned == (
+        summary.copied
+        + summary.duplicates
+        + summary.skipped_identical
+        + summary.failed
+        + summary.cancelled_files
+    )
+
+
+def test_file_result_is_json_serializable(tmp_path):
+    import json
+    from storage_organizer.models import FileResult
+
+    result = FileResult(
+        source=tmp_path / "source.txt",
+        destination=tmp_path / "destination.txt",
+        status="duplicate",
+        reason="Same bytes",
+        sha256="abc123",
+        duplicate_of=tmp_path / "original.txt",
+    )
+    payload = result.to_dict()
+
+    assert json.loads(json.dumps(payload)) == {
+        "source": str(tmp_path / "source.txt"),
+        "destination": str(tmp_path / "destination.txt"),
+        "status": "duplicate",
+        "reason": "Same bytes",
+        "sha256": "abc123",
+        "duplicate_of": str(tmp_path / "original.txt"),
+    }
+
+
+def test_unreadable_source_is_a_per_file_error_and_other_files_continue(
+    tmp_path, make_file, monkeypatch
+):
+    import storage_organizer.planner as planner_module
+
+    source = tmp_path / "source"
+    broken = make_file(source / "a-unreadable.txt", b"cannot read")
+    make_file(source / "b-readable.txt", b"copy this")
+    real_hash = planner_module.sha256_file
+
+    def selective_hash(path):
+        if path == broken:
+            raise PermissionError("permission denied in test")
+        return real_hash(path)
+
+    monkeypatch.setattr(planner_module, "sha256_file", selective_hash)
+    plan = planner_module.build_plan([source], tmp_path / "destination", config_copy())
+    by_source = {item.source.name: item for item in plan}
+
+    assert by_source["a-unreadable.txt"].action == "error"
+    assert "permission denied in test" in by_source["a-unreadable.txt"].reason
+    assert by_source["b-readable.txt"].action == "copy"
+
+    summary = execute_plan(plan)
+    results = {item.source.name: item for item in summary.files}
+    assert results["a-unreadable.txt"].status == "error"
+    assert results["b-readable.txt"].status == "copied"
+    assert summary.failed == 1
+    assert summary.copied == 1
+
+
+def test_organize_emits_plan_before_live_file_statuses(tmp_path, make_file):
+    source = tmp_path / "source"
+    make_file(source / "a.txt", b"payload")
+    events = []
+
+    summary, plan = organize(
+        [source],
+        tmp_path / "destination",
+        plan_ready=lambda current_plan: events.append(("plan", len(current_plan))),
+        file_progress=lambda result, done, total, _summary: events.append(
+            (result.status, done, total)
+        ),
+    )
+
+    assert events[0] == ("plan", 1)
+    assert [event[0] for event in events[1:]] == ["copying", "copied"]
+    assert summary.copied == 1
+    assert len(plan) == 1
+
+
+def test_cancellation_preserves_already_known_skip_and_planning_error_results(
+    tmp_path, make_file, monkeypatch
+):
+    import threading
+    import storage_organizer.planner as planner_module
+
+    source = tmp_path / "source"
+    make_file(source / "a-duplicate.txt", b"duplicate bytes")
+    unreadable = make_file(source / "b-unreadable.txt", b"cannot read")
+    make_file(source / "c-copy.txt", b"copy bytes")
+    make_file(tmp_path / "destination" / "stored.txt", b"duplicate bytes")
+    real_hash = planner_module.sha256_file
+
+    def selective_hash(path):
+        if path == unreadable:
+            raise PermissionError("read denied")
+        return real_hash(path)
+
+    monkeypatch.setattr(planner_module, "sha256_file", selective_hash)
+    plan = build_plan([source], tmp_path / "destination", config_copy())
+    cancel_event = threading.Event()
+    cancel_event.set()
+    summary = execute_plan(plan, cancel_event=cancel_event)
+    results = {item.source.name: item for item in summary.files}
+
+    assert results["a-duplicate.txt"].status == "skipped"
+    assert results["b-unreadable.txt"].status == "error"
+    assert results["c-copy.txt"].status == "cancelled"
+    assert summary.skipped_identical == 1
+    assert summary.failed == 1
+    assert summary.cancelled_files == 1
+    assert summary.scanned == 3

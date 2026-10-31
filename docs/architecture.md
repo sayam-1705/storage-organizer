@@ -10,9 +10,9 @@ The application has two entry points (CLI and optional PySide6 GUI) and one shar
 - `scanner.py`: recursive traversal without following symlinks; hidden files are configurable.
 - `classifier.py`: extension-to-category mapping.
 - `metadata.py`: optional local metadata extraction and filesystem timestamp fallback.
-- `planner.py`: destination layout, cross-platform filename normalization, and conflict/duplicate planning.
+- `planner.py`: destination layout, cross-platform filename normalization, conflict planning, and explicit destination-skip versus source-duplicate classification.
 - `hashing.py`: bounded-memory SHA-256.
-- `transfer.py`: temp-file copy, verification, no-overwrite publishing, summaries.
+- `transfer.py`: temp-file copy, verification, no-overwrite publishing, structured per-file outcomes, live status events, and aggregate summaries.
 - `config.py`: TOML config and platform-specific user config directory.
 - `logging_setup.py`: rotating local log.
 - `preferences.py`: atomic JSON persistence for last GUI paths; no database.
@@ -27,6 +27,7 @@ The application has two entry points (CLI and optional PySide6 GUI) and one shar
 5. For each copy, revalidate the source and destination path, create the destination directory, and write to a temporary file in that directory.
 6. Verify the temporary copy, publish with no-overwrite semantics (atomic where the OS supports it), and verify the published file.
 7. Sync the destination directory where supported, log the outcome, and leave the source unchanged.
+8. Retain one result per discovered file. Copies, destination skips, source duplicates, errors, and files not started after cancellation have distinct terminal statuses and explanatory details.
 
 ## Persistence
 

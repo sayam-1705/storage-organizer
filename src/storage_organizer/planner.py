@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 import unicodedata
+
 from .classifier import classify
 from .hashing import sha256_file
 from .metadata import resolve_datetime
@@ -52,7 +53,10 @@ def build_plan(sources: list[Path], destination: Path, config: dict) -> list[Pla
     policy = str(org.get("date_policy", "metadata_then_modified"))
     include_hidden = bool(org.get("include_hidden", False))
     template = str(config["duplicates"].get("rename_template", "{stem} ({number}){suffix}"))
-    destination_hashes: set[str] = set()
+
+    # Keep the actual matching path for each existing digest so a skipped file can
+    # tell the user exactly which destination file already contains its content.
+    destination_by_hash: dict[str, Path] = {}
     known_hashes: dict[str, str] = {}
     if destination.exists():
         for path in scan_files([destination], include_hidden=True):
@@ -63,24 +67,64 @@ def build_plan(sources: list[Path], destination: Path, config: dict) -> list[Pla
             try:
                 digest = sha256_file(path)
                 known_hashes[str(path)] = digest
-                destination_hashes.add(digest)
+                destination_by_hash.setdefault(digest, path)
             except OSError:
                 continue
+
     plan: list[PlannedFile] = []
     reserved_paths: set[str] = set()
-    planned_hashes: set[str] = set()
+    # Map each digest to the first selected source that will represent that content.
+    # Later matches are marked as duplicates and retain the original source path.
+    planned_sources_by_hash: dict[str, Path] = {}
+
     for source in scan_files(sources, include_hidden=include_hidden):
+        category = classify(source)
         try:
             digest = sha256_file(source)
-            stamp = resolve_datetime(source, policy)
         except OSError as exc:
-            raise OSError(f"Unable to read source file: {source}: {exc}") from exc
-        category = classify(source)
+            # A single unreadable or vanished source should not discard results for
+            # every other file in the selected drive. Keep it in the plan as an error.
+            error_target = _destination_for(
+                destination, category, None, _portable_filename(source.name), unknown
+            )
+            plan.append(PlannedFile(
+                source, error_target, category, None, None, "", "error",
+                f"Unable to read source file: {source}: {exc}",
+            ))
+            continue
+
+        try:
+            stamp = resolve_datetime(source, policy)
+        except Exception as exc:
+            error_target = _destination_for(
+                destination, category, None, _portable_filename(source.name), unknown
+            )
+            plan.append(PlannedFile(
+                source, error_target, category, None, None, digest, "error",
+                f"Unable to inspect source metadata for {source}: {exc}",
+            ))
+            continue
+
         target = _destination_for(destination, category, stamp, _portable_filename(source.name), unknown)
         year = stamp.year if stamp else None
         month = MONTHS[stamp.month - 1] if stamp else None
-        if digest in destination_hashes or digest in planned_hashes:
-            plan.append(PlannedFile(source, target, category, year, month, digest, "skip_identical", "Identical content already exists in destination or this run"))
+
+        existing_match = destination_by_hash.get(digest)
+        if existing_match is not None:
+            plan.append(PlannedFile(
+                source, target, category, year, month, digest, "skip_identical",
+                f"Identical content already exists in destination: {existing_match}",
+                skip_reason="destination", duplicate_of=existing_match,
+            ))
+            continue
+
+        source_match = planned_sources_by_hash.get(digest)
+        if source_match is not None:
+            plan.append(PlannedFile(
+                source, target, category, year, month, digest, "skip_identical",
+                f"Duplicate content in selected sources; first encountered at {source_match}",
+                skip_reason="source_duplicate", duplicate_of=source_match,
+            ))
             continue
 
         # Resolve existing-file and same-run name collisions without overwriting.
@@ -92,6 +136,7 @@ def build_plan(sources: list[Path], destination: Path, config: dict) -> list[Pla
                     existing_hash = known_hashes.get(str(target)) or sha256_file(target)
                     known_hashes[str(target)] = existing_hash
                     if existing_hash == digest:
+                        destination_by_hash.setdefault(digest, target)
                         target = None  # type: ignore[assignment]
                         break
                 except OSError:
@@ -101,10 +146,18 @@ def build_plan(sources: list[Path], destination: Path, config: dict) -> list[Pla
             number += 1
             if number > 1_000_000:
                 raise RuntimeError(f"Could not find a collision-free filename for {original_target}")
+
         if target is None:
-            plan.append(PlannedFile(source, original_target, category, year, month, digest, "skip_identical", "Identical content already exists at target"))
+            existing_match = destination_by_hash[digest]
+            plan.append(PlannedFile(
+                source, original_target, category, year, month, digest, "skip_identical",
+                f"Identical content already exists at target: {existing_match}",
+                skip_reason="destination", duplicate_of=existing_match,
+            ))
             continue
+
         reserved_paths.add(_path_key(target))
-        planned_hashes.add(digest)
+        planned_sources_by_hash[digest] = source
         plan.append(PlannedFile(source, target, category, year, month, digest, "copy", "Ready to copy"))
+
     return plan

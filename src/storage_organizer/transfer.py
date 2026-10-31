@@ -8,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 from .hashing import sha256_file
-from .models import PlannedFile, RunSummary
+from .models import FileResult, PlannedFile, RunSummary
 
 
 class TransferError(RuntimeError):
@@ -186,30 +186,124 @@ def copy_one(item: PlannedFile, verify_hash: bool = True) -> str:
                 pass
 
 
-def execute_plan(plan: list[PlannedFile], verify_hash: bool = True, logger=None, progress=None, cancel_event=None) -> RunSummary:
-    summary = RunSummary(scanned=len(plan), planned=sum(item.action == "copy" for item in plan))
-    for index, item in enumerate(plan, start=1):
+def execute_plan(
+    plan: list[PlannedFile],
+    verify_hash: bool = True,
+    logger=None,
+    progress=None,
+    cancel_event=None,
+    file_progress=None,
+) -> RunSummary:
+    """Execute a plan and retain one structured result for every planned file.
+
+    ``progress`` preserves the original callback API and fires once per file after
+    its terminal outcome. ``file_progress`` receives ``(result, done, total,
+    summary)`` for live status changes, including the transition to ``copying``.
+    """
+    summary = RunSummary(
+        scanned=len(plan),
+        planned=sum(item.action == "copy" for item in plan),
+        files=[
+            FileResult(
+                source=item.source,
+                destination=item.destination,
+                sha256=item.sha256,
+                duplicate_of=item.duplicate_of,
+            )
+            for item in plan
+        ],
+    )
+    total = len(plan)
+    done = 0
+
+    def notify_file(result: FileResult) -> None:
+        if file_progress:
+            file_progress(result, done, total, summary)
+
+    def notify_legacy(index: int, item: PlannedFile) -> None:
+        if progress:
+            progress(index, total, item, summary)
+
+    cancellation_logged = False
+    for index, (item, file_result) in enumerate(zip(plan, summary.files), start=1):
+        # Planning outcomes are already known and should remain visible even when
+        # the user cancels the copy phase. Only work that has not started is cancelled.
+        if item.action == "error":
+            file_result.status = "error"
+            file_result.reason = item.reason or f"Unable to plan source file: {item.source}"
+            summary.failed += 1
+            message = f"FAILED {item.source}: {file_result.reason}"
+            summary.errors.append(message)
+            done += 1
+            notify_file(file_result)
+            if logger:
+                logger.error(message)
+            notify_legacy(index, item)
+            continue
+
+        if item.action == "skip_identical":
+            if item.skip_reason == "source_duplicate":
+                file_result.status = "duplicate"
+                file_result.reason = item.reason or "Duplicate content in selected sources"
+                summary.duplicates += 1
+                message = f"DUPLICATE {item.source}: {file_result.reason}"
+            else:
+                file_result.status = "skipped"
+                file_result.reason = item.reason or "Identical content already exists in destination"
+                summary.skipped_identical += 1
+                message = f"SKIPPED {item.source}: {file_result.reason}"
+            done += 1
+            notify_file(file_result)
+            if logger:
+                logger.info(message)
+            notify_legacy(index, item)
+            continue
+
         if cancel_event is not None and cancel_event.is_set():
             summary.cancelled = True
-            if logger:
+            file_result.status = "cancelled"
+            file_result.reason = "Not processed because cancellation was requested"
+            summary.cancelled_files += 1
+            done += 1
+            notify_file(file_result)
+            if logger and not cancellation_logged:
                 logger.info("Operation cancelled by user between files")
-            break
+                cancellation_logged = True
+            notify_legacy(index, item)
+            continue
+
+        file_result.status = "copying"
+        file_result.reason = "Copy in progress"
+        notify_file(file_result)
         try:
             result = copy_one(item, verify_hash=verify_hash)
             if result == "copied":
+                file_result.status = "copied"
+                file_result.reason = (
+                    "Copied successfully and SHA-256 verified"
+                    if verify_hash else "Copied successfully"
+                )
                 summary.copied += 1
                 message = f"COPIED {item.source} -> {item.destination}"
             else:
+                file_result.status = "skipped"
+                file_result.reason = "Identical content appeared in destination after planning"
+                file_result.duplicate_of = item.destination
                 summary.skipped_identical += 1
                 message = f"SKIPPED identical {item.source}"
             if logger:
                 logger.info(message)
         except Exception as exc:  # keep processing other files after an individual failure
+            file_result.status = "error"
+            file_result.reason = str(exc)
             summary.failed += 1
             message = f"FAILED {item.source}: {exc}"
             summary.errors.append(message)
             if logger:
                 logger.exception(message)
-        if progress:
-            progress(index, len(plan), item, summary)
+
+        done += 1
+        notify_file(file_result)
+        notify_legacy(index, item)
+
     return summary

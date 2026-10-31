@@ -143,7 +143,7 @@ storage-organizer-gui
 python -m storage_organizer.gui
 ```
 
-The GUI allows choosing a source drive/folder and destination path, previewing the plan, running a copy, and requesting cancellation between files. A destination path can be typed even if the final folder does not exist yet. The current GUI selects one source at a time; the CLI supports multiple `--source` arguments. A missing PySide6 dependency produces an installation hint.
+The GUI allows choosing a source drive/folder and destination path, previewing the plan, running a copy, and requesting cancellation between files. Its results table shows each file's source, destination, status, and details, and updates during transfers. A destination path can be typed even if the final folder does not exist yet. The current GUI selects one source at a time; the CLI supports multiple `--source` arguments. A missing PySide6 dependency produces an installation hint.
 
 ## Folder structure
 
@@ -159,9 +159,13 @@ OrganizedStorage/
 
 Files with no resolvable timestamp go into `<Category>/UnknownDate/`. Category is determined by extension. Embedded metadata is read only when supported by an installed optional tool; otherwise modification time is used. Supported embedded metadata includes common image EXIF dates, PDF dates (with pypdf), DOCX core properties, and media creation timestamps when `ffprobe` is installed.
 
-## Duplicate behavior
+## Duplicate behavior and per-file results
 
-The organizer calculates SHA-256 hashes using bounded-memory streaming. If identical content already exists anywhere in the destination, it is skipped. If two different files would otherwise have the same destination filename, a suffix such as `report (1).pdf` is used. Identical contents among the current source set are copied once. A new run re-scans the destination and can safely skip content already copied in a previous run.
+The organizer calculates SHA-256 hashes using bounded-memory streaming. If identical content already exists anywhere in the destination, the file is reported as **Skipped** and the existing destination path is included in the result. If identical content appears more than once in the selected source set, the first file is copied and each later match is reported as **Duplicate**, with the original source path identified. If two different files would otherwise have the same destination filename, a suffix such as `report (1).pdf` is used. A new run re-scans the destination and can safely skip content copied in a previous run.
+
+Every discovered file receives a result with its source, planned destination, final status, reason, SHA-256 digest when readable, and duplicate reference where applicable. A file that cannot be read during planning is retained as an `error` result without preventing other files from proceeding. Final statuses are `copied`, `skipped`, `duplicate`, `error`, and `cancelled`; `copying` is also emitted as a live GUI/worker state. Cancellation marks every file that was not started as `cancelled` rather than leaving it without a result.
+
+The `organize --json` report includes aggregate counts and a `files` array containing the individual outcomes. The desktop GUI displays the same information in a per-file results table.
 
 ## Configuration and logs
 
@@ -176,7 +180,7 @@ python -m pip install -e ".[test]"
 python -m pytest --cov=storage_organizer --cov-report=term-missing
 ```
 
-CI runs these tests on Windows, macOS, and Ubuntu for Python 3.11, 3.12, 3.13, and 3.14, then smoke-tests the CLI. The tests exercise classification, recursive scanning, path safety, dry-run, category/date routing, duplicates, filename conflicts, copy verification, repeat runs, configuration validation, and CLI output.
+CI runs these tests on Windows, macOS, and Ubuntu for Python 3.11, 3.12, 3.13, and 3.14, then smoke-tests the CLI. The tests exercise classification, deterministic recursive scanning, path safety, dry-run, category/date routing, destination skips versus source duplicates, per-file success/error/cancellation outcomes, filename conflicts, copy verification, repeat runs, configuration validation, and CLI JSON results.
 
 ## Production-readiness checklist
 

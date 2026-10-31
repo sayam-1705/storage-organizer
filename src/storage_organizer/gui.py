@@ -15,6 +15,7 @@ if sys.platform.startswith("linux"):
 try:
     from PySide6.QtCore import QObject, QThread, Signal
     from PySide6.QtWidgets import (
+        QAbstractItemView,
         QApplication,
         QCheckBox,
         QFileDialog,
@@ -26,6 +27,8 @@ try:
         QMessageBox,
         QPushButton,
         QProgressBar,
+        QTableWidget,
+        QTableWidgetItem,
         QTextEdit,
         QVBoxLayout,
         QWidget,
@@ -46,7 +49,8 @@ from .preferences import load_preferences, save_preferences
 
 
 class Worker(QObject):
-    progress = Signal(int, int, str)
+    plan_ready = Signal(object)
+    file_updated = Signal(object, int, int)
     finished = Signal(object, object)
     failed = Signal(str)
 
@@ -59,11 +63,20 @@ class Worker(QObject):
         try:
             if self.preview:
                 plan, _, _, _ = create_plan(self.sources, self.destination)
+                self.plan_ready.emit(plan)
                 self.finished.emit(None, plan)
             else:
                 logger = setup_logging()
-                summary, plan = organize(self.sources, self.destination, logger=logger, cancel_event=self.cancel_event,
-                    progress=lambda done, total, item, summary: self.progress.emit(done, total, item.source.name))
+                summary, plan = organize(
+                    self.sources,
+                    self.destination,
+                    logger=logger,
+                    cancel_event=self.cancel_event,
+                    plan_ready=self.plan_ready.emit,
+                    file_progress=lambda result, done, total, _summary: self.file_updated.emit(
+                        result, done, total
+                    ),
+                )
                 self.finished.emit(summary, plan)
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -73,8 +86,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Storage Organizer")
-        self.resize(850, 620)
+        self.resize(1100, 720)
         self.sources: list[Path] = []
+        self._file_rows: dict[str, int] = {}
         preferences = load_preferences()
         if preferences.get("source") and Path(preferences["source"]).is_dir():
             self.sources = [Path(preferences["source"])]
@@ -85,24 +99,32 @@ class MainWindow(QMainWindow):
         self.thread: QThread | None = None
         self.worker: Worker | None = None
         self.cancel_event = threading.Event()
+
         central = QWidget()
         layout = QVBoxLayout(central)
         form = QFormLayout()
         self.source_label = QLabel(str(self.sources[0]) if self.sources else "No source selected")
         source_button = QPushButton("Select drive/folder(s)…")
         source_button.clicked.connect(self.select_sources)
-        source_row = QHBoxLayout(); source_row.addWidget(self.source_label, 1); source_row.addWidget(source_button)
+        source_row = QHBoxLayout()
+        source_row.addWidget(self.source_label, 1)
+        source_row.addWidget(source_button)
         form.addRow("Source", source_row)
+
         self.destination_edit = QLineEdit(self.destination_initial)
         dest_button = QPushButton("Browse…")
         dest_button.clicked.connect(self.select_destination)
-        dest_row = QHBoxLayout(); dest_row.addWidget(self.destination_edit, 1); dest_row.addWidget(dest_button)
+        dest_row = QHBoxLayout()
+        dest_row.addWidget(self.destination_edit, 1)
+        dest_row.addWidget(dest_button)
         form.addRow("Destination root", dest_row)
         layout.addLayout(form)
+
         self.verify_checkbox = QCheckBox("Verify copied files using SHA-256")
         self.verify_checkbox.setChecked(True)
         self.verify_checkbox.setEnabled(False)  # verification is intentionally mandatory in v1
         layout.addWidget(self.verify_checkbox)
+
         buttons = QHBoxLayout()
         self.preview_button = QPushButton("Preview plan")
         self.preview_button.clicked.connect(lambda: self.start_job(True))
@@ -111,12 +133,34 @@ class MainWindow(QMainWindow):
         self.cancel_button = QPushButton("Cancel after current file")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self.cancel_job)
-        buttons.addWidget(self.preview_button); buttons.addWidget(self.organize_button); buttons.addWidget(self.cancel_button)
+        buttons.addWidget(self.preview_button)
+        buttons.addWidget(self.organize_button)
+        buttons.addWidget(self.cancel_button)
         layout.addLayout(buttons)
-        self.progress = QProgressBar(); self.progress.setRange(0, 100)
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
         layout.addWidget(self.progress)
-        self.output = QTextEdit(); self.output.setReadOnly(True)
-        layout.addWidget(self.output, 1)
+
+        self.results_table = QTableWidget(0, 5)
+        self.results_table.setHorizontalHeaderLabels(
+            ["File", "Source", "Destination", "Status", "Details"]
+        )
+        self.results_table.setAlternatingRowColors(True)
+        self.results_table.setWordWrap(False)
+        self.results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.results_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.results_table.horizontalHeader().setStretchLastSection(True)
+        self.results_table.setColumnWidth(0, 180)
+        self.results_table.setColumnWidth(1, 260)
+        self.results_table.setColumnWidth(2, 300)
+        self.results_table.setColumnWidth(3, 100)
+        layout.addWidget(self.results_table, 1)
+
+        self.output = QTextEdit()
+        self.output.setReadOnly(True)
+        self.output.setMaximumHeight(110)
+        layout.addWidget(self.output)
         self.setCentralWidget(central)
 
     def select_sources(self):
@@ -137,18 +181,34 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Missing paths", "Select a source and destination first.")
             return
         if not preview:
-            answer = QMessageBox.question(self, "Confirm copy", "Copy files to the selected destination? Original files will remain untouched.")
+            answer = QMessageBox.question(
+                self,
+                "Confirm copy",
+                "Copy files to the selected destination? Original files will remain untouched.",
+            )
             if answer != QMessageBox.StandardButton.Yes:
                 return
-        self.preview_button.setEnabled(False); self.organize_button.setEnabled(False)
+
+        self.preview_button.setEnabled(False)
+        self.organize_button.setEnabled(False)
         self.cancel_button.setEnabled(not preview)
-        self.output.clear(); self.progress.setValue(0)
+        self.output.clear()
+        self.results_table.setRowCount(0)
+        self._file_rows.clear()
+        self.progress.setValue(0)
         self.cancel_event.clear()
+
         self.thread = QThread(self)
-        self.worker = Worker(self.sources, Path(self.destination_edit.text().strip()), preview, self.cancel_event)
+        self.worker = Worker(
+            self.sources,
+            Path(self.destination_edit.text().strip()),
+            preview,
+            self.cancel_event,
+        )
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
-        self.worker.progress.connect(self.on_progress)
+        self.worker.plan_ready.connect(self.on_plan_ready)
+        self.worker.file_updated.connect(self.on_file_updated)
         self.worker.finished.connect(self.on_finished)
         self.worker.failed.connect(self.on_failed)
         self.worker.finished.connect(self.thread.quit)
@@ -161,19 +221,63 @@ class MainWindow(QMainWindow):
         self.output.append("Cancellation requested; the current file will finish safely.")
         self.cancel_button.setEnabled(False)
 
-    def on_progress(self, done: int, total: int, filename: str):
+    def on_plan_ready(self, plan):
+        self.results_table.setRowCount(len(plan))
+        self._file_rows.clear()
+        for row, planned_file in enumerate(plan):
+            if planned_file.action == "copy":
+                status = "Pending"
+            elif planned_file.action == "error":
+                status = "Error"
+            elif planned_file.skip_reason == "source_duplicate":
+                status = "Duplicate"
+            else:
+                status = "Skipped"
+
+            values = (
+                planned_file.source.name,
+                str(planned_file.source),
+                str(planned_file.destination),
+                status,
+                planned_file.reason,
+            )
+            for column, value in enumerate(values):
+                self.results_table.setItem(row, column, QTableWidgetItem(value))
+            self._file_rows[str(planned_file.source)] = row
+        self.results_table.resizeRowsToContents()
+
+    def on_file_updated(self, file_result, done: int, total: int):
         self.progress.setValue(int(done * 100 / max(total, 1)))
-        self.output.append(f"[{done}/{total}] {filename}")
+        row = self._file_rows.get(str(file_result.source))
+        if row is None:
+            return
+        status_item = self.results_table.item(row, 3)
+        details_item = self.results_table.item(row, 4)
+        if status_item is not None:
+            status_item.setText(file_result.status.capitalize())
+        if details_item is not None:
+            details_item.setText(file_result.reason)
 
     def on_finished(self, summary, plan):
         if summary is None:
-            self.output.append(f"Preview: {len(plan)} files")
-            for item in plan:
-                self.output.append(f"[{item.action}] {item.source} → {item.destination} — {item.reason}")
+            copy_count = sum(item.action == "copy" for item in plan)
+            skipped_count = sum(
+                item.action == "skip_identical" and item.skip_reason != "source_duplicate"
+                for item in plan
+            )
+            duplicate_count = sum(item.skip_reason == "source_duplicate" for item in plan)
+            self.output.append(
+                f"Preview: {len(plan)} files — {copy_count} to copy, "
+                f"{skipped_count} already in destination, {duplicate_count} duplicates"
+            )
         else:
             status = "Cancelled" if summary.cancelled else "Complete"
-            self.output.append(f"{status} — copied {summary.copied}, skipped {summary.skipped_identical}, failed {summary.failed}")
-            for error in summary.errors or []:
+            self.output.append(
+                f"{status} — copied {summary.copied}, skipped {summary.skipped_identical}, "
+                f"duplicates {summary.duplicates}, failed {summary.failed}, "
+                f"not processed {summary.cancelled_files}"
+            )
+            for error in summary.errors:
                 self.output.append(error)
         self.progress.setValue(100)
 
@@ -182,13 +286,17 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Operation failed", message)
 
     def restore_buttons(self):
-        self.preview_button.setEnabled(True); self.organize_button.setEnabled(True); self.cancel_button.setEnabled(False)
+        self.preview_button.setEnabled(True)
+        self.organize_button.setEnabled(True)
+        self.cancel_button.setEnabled(False)
 
 
 def main() -> int:
     app = QApplication(sys.argv)
-    window = MainWindow(); window.show()
+    window = MainWindow()
+    window.show()
     return app.exec()
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

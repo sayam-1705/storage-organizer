@@ -33,6 +33,9 @@ def test_cli_preview_json_and_organize(tmp_path, make_file, capsys):
     result = json.loads(capsys.readouterr().out)
     assert result["copied"] == 1
     assert result["failed"] == 0
+    assert len(result["files"]) == 1
+    assert result["files"][0]["status"] == "copied"
+    assert result["files"][0]["source"] == str(source / "notes.txt")
 
 
 def test_cli_rejects_overlapping_paths(tmp_path, make_file, capsys):
@@ -61,3 +64,32 @@ def test_rejects_unknown_configuration_keys(tmp_path):
     config_path.write_text('[transfer]\nverfiy_hash = false\n', encoding="utf-8")
     with pytest.raises(ValueError, match="Unknown key"):
         load_config(config_path)
+
+
+def test_cli_json_reports_copied_duplicate_and_destination_skip(tmp_path, make_file, capsys):
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    make_file(source / "one.txt", b"source duplicate")
+    make_file(source / "two.txt", b"source duplicate")
+    make_file(source / "three.txt", b"already in destination")
+    make_file(destination / "archive" / "existing.txt", b"already in destination")
+
+    code = main([
+        "organize",
+        "--source", str(source),
+        "--destination", str(destination),
+        "--json",
+    ])
+    payload = json.loads(capsys.readouterr().out)
+    statuses = {Path(item["source"]).name: item for item in payload["files"]}
+
+    assert code == 0
+    assert payload["scanned"] == 3
+    assert payload["copied"] == 1
+    assert payload["duplicates"] == 1
+    assert payload["skipped_identical"] == 1
+    assert statuses["one.txt"]["status"] == "copied"
+    assert statuses["two.txt"]["status"] == "duplicate"
+    assert statuses["two.txt"]["duplicate_of"] == str(source / "one.txt")
+    assert statuses["three.txt"]["status"] == "skipped"
+    assert statuses["three.txt"]["duplicate_of"].endswith("existing.txt")

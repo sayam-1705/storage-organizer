@@ -1,3 +1,9 @@
+## Unreleased
+
+- Added structured per-file operation results across planning, transfers, CLI JSON output, and the desktop GUI.
+- Distinguished files already present in the destination from duplicates within the selected source set.
+- Added explicit per-file cancellation and error outcomes, plus deterministic source traversal.
+
 # Changelog
 
 ## 1.0.1 — Production-readiness hardening

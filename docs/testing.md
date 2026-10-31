@@ -9,8 +9,9 @@ Coverage areas:
 - Missing/overlapping paths and nested source deduplication.
 - Dry-run leaves the destination untouched.
 - Date-based folder creation and unknown-date fallback.
-- Identical-content skipping, same-name/different-content renaming, and duplicate source content.
+- Identical-content skipping, same-name/different-content renaming, and duplicate source content with the original source path recorded.
 - Copy-only behavior, SHA-256 verification, and repeat-run idempotence.
+- Per-file copying/copied/skipped/duplicate/error/cancelled states, unreadable-source planning errors, complete result lists, and aggregate-count consistency.
 - Configuration validation and CLI JSON/text behavior.
 
 Run locally:
@@ -20,4 +21,4 @@ python -m pip install -e ".[test]"
 python -m pytest --cov=storage_organizer --cov-report=term-missing
 ```
 
-CI runs the same generated-mock-data tests on three operating systems and three supported Python versions. Tests must not read or modify user drives.
+CI runs the same generated-mock-data tests on three operating systems and four supported Python versions (3.11–3.14). Tests must not read or modify user drives.

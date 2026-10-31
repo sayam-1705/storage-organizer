@@ -99,3 +99,6 @@ Thumbs.db
 core
 core.*
 *.dmp
+
+# Development related
+*.patch

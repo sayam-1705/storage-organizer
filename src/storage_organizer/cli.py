@@ -4,10 +4,11 @@ import argparse
 import json
 import sys
 from pathlib import Path
+
 from . import __version__
+from .config import load_config
 from .logging_setup import setup_logging
 from .organizer import create_plan, organize
-from .config import load_config
 from .storage import StorageValidationError
 
 
@@ -25,32 +26,74 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _planned_file_payload(item) -> dict[str, str | None]:
+    return {
+        "source": str(item.source),
+        "destination": str(item.destination),
+        "category": item.category,
+        "action": item.action,
+        "reason": item.reason,
+        "skip_reason": item.skip_reason,
+        "duplicate_of": str(item.duplicate_of) if item.duplicate_of else None,
+    }
+
+
+def _summary_payload(summary) -> dict:
+    return {
+        "scanned": summary.scanned,
+        "planned": summary.planned,
+        "copied": summary.copied,
+        "skipped_identical": summary.skipped_identical,
+        "duplicates": summary.duplicates,
+        "failed": summary.failed,
+        "cancelled_files": summary.cancelled_files,
+        "cancelled": summary.cancelled,
+        "errors": summary.errors,
+        "files": [item.to_dict() for item in summary.files],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         if args.command == "preview":
             plan, config, sources, destination = create_plan(args.source, args.destination, args.config)
             if args.json:
-                print(json.dumps([{"source": str(p.source), "destination": str(p.destination), "category": p.category, "action": p.action, "reason": p.reason} for p in plan], indent=2))
+                print(json.dumps([_planned_file_payload(item) for item in plan], indent=2))
             else:
                 print(f"Source(s): {', '.join(map(str, sources))}\nDestination: {destination}\nPlanned files: {len(plan)}")
                 for item in plan:
-                    print(f"[{item.action.upper()}] {item.source} -> {item.destination} ({item.reason})")
+                    status = "DUPLICATE" if item.skip_reason == "source_duplicate" else item.action.upper()
+                    print(f"[{status}] {item.source} -> {item.destination} ({item.reason})")
             return 0
+
         config = load_config(args.config)
         configured_log_dir = config.get("logging", {}).get("directory")
         logger = setup_logging(Path(configured_log_dir).expanduser() if configured_log_dir else None, verbose=args.verbose)
-        def progress(done, total, item, summary):
-            if not args.json:
-                print(f"[{done}/{total}] {item.source.name}")
-        summary, plan = organize(args.source, args.destination, args.config, progress=progress, logger=logger)
-        result = {"scanned": summary.scanned, "planned": summary.planned, "copied": summary.copied, "skipped_identical": summary.skipped_identical, "failed": summary.failed, "cancelled": summary.cancelled, "errors": summary.errors}
+
+        def file_progress(file_result, done, total, summary):
+            if not args.json and file_result.status != "copying":
+                print(f"[{done}/{total}] {file_result.status.upper()} {file_result.source.name} — {file_result.reason}")
+
+        summary, plan = organize(
+            args.source,
+            args.destination,
+            args.config,
+            logger=logger,
+            file_progress=file_progress,
+        )
+        result = _summary_payload(summary)
         if args.json:
             print(json.dumps(result, indent=2))
         else:
             print("\nOrganization complete")
             for key, value in result.items():
-                print(f"{key.replace('_', ' ').title()}: {value}")
+                if key not in {"errors", "files"}:
+                    print(f"{key.replace('_', ' ').title()}: {value}")
+            if summary.errors:
+                print("\nErrors:")
+                for error in summary.errors:
+                    print(f"- {error}")
         return 130 if summary.cancelled else (1 if summary.failed else 0)
     except (StorageValidationError, ValueError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
