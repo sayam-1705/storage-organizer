@@ -143,7 +143,7 @@ storage-organizer-gui
 python -m storage_organizer.gui
 ```
 
-The GUI allows choosing a source drive/folder and destination path, previewing the plan, running a copy, and requesting cancellation between files. Its results table shows each file's source, destination, status, and details, and updates during transfers. A destination path can be typed even if the final folder does not exist yet. The current GUI selects one source at a time; the CLI supports multiple `--source` arguments. A missing PySide6 dependency produces an installation hint.
+The GUI supports adding multiple source drives/folders, removing selected sources, and choosing a destination. It shows scan progress, a per-file results table, transfer throughput, and an estimated time remaining while copying. Search and status filters help narrow large result lists. The **Settings** dialog controls hidden-file scanning, date selection policy, and the unknown-date folder; SHA-256 verification remains enabled. The **Recent activity** tab keeps the last 10 operation summaries locally. Cancellation is honored between files, and original source files remain untouched. A destination path can be typed even if the final folder does not exist yet. A missing PySide6 dependency produces an installation hint.
 
 ## Folder structure
 
@@ -169,7 +169,7 @@ The `organize --json` report includes aggregate counts and a `files` array conta
 
 ## Configuration and logs
 
-Copy `config.example.toml` to a local config file and pass it with `--config`. By default, user settings/logs are kept in the operating system's application configuration area (for example, `~/.config/storage-organizer/` on Linux). The app writes a rotating `organizer.log` and a small `preferences.json` file for the GUI’s last source/destination selections; it does not create a database. Keep personal logs out of source control.
+Copy `config.example.toml` to a local config file and pass it with `--config`. By default, user settings/logs are kept in the operating system's application configuration area (for example, `~/.config/storage-organizer/` on Linux). The app writes a rotating `organizer.log`, a `preferences.json` file for the GUI's selected source/destination paths, and a `recent-runs.json` file containing the last 10 operation summaries. The history contains local paths and aggregate counts, but no file contents. The app does not create a database. Keep personal settings, history, and logs out of source control.
 
 ## Tests and mock data
 
@@ -180,7 +180,7 @@ python -m pip install -e ".[test]"
 python -m pytest --cov=storage_organizer --cov-report=term-missing
 ```
 
-CI runs these tests on Windows, macOS, and Ubuntu for Python 3.11, 3.12, 3.13, and 3.14, then smoke-tests the CLI. The tests exercise classification, deterministic recursive scanning, path safety, dry-run, category/date routing, destination skips versus source duplicates, per-file success/error/cancellation outcomes, filename conflicts, copy verification, repeat runs, configuration validation, and CLI JSON results.
+CI runs these tests on Windows, macOS, and Ubuntu for Python 3.11, 3.12, 3.13, and 3.14, then smoke-tests the CLI and headless GUI initialization. The tests exercise classification, deterministic recursive scanning, path safety, dry-run, category/date routing, destination skips versus source duplicates, per-file success/error/cancellation outcomes, scan/transfer progress, filename conflicts, copy verification, repeat runs, configuration validation, preference/history persistence, and CLI JSON results.
 
 ## Production-readiness checklist
 
@@ -191,7 +191,6 @@ See [docs/production-readiness.md](docs/production-readiness.md) for the release
 - Metadata coverage varies by file type and optional tools. The fallback is modification time, not a guaranteed original creation date.
 - FAT32 cannot store individual files larger than 4 GB; copying such files fails safely and is reported.
 - The first release is copy-only; it never deletes source files.
-- GUI source selection currently chooses one folder/drive per run; use repeated `--source` options in the CLI for multiple sources.
 - A file-based log is not a transactional journal. After a crash, rerun the operation; destination hashes are rechecked and identical content is skipped.
 - Filesystems differ in filename rules and metadata support. Test with a small sample before processing a large drive.
 

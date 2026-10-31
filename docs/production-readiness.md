@@ -15,6 +15,7 @@ This checklist records the safeguards covered by the code and automated tests. I
 - File names are normalized when required for common Windows/removable-filesystem compatibility; reserved Windows device names are prefixed.
 - Configuration sections, keys, date policy, folder names, rename templates, and verification flags are validated.
 - GUI defaults to Qt's generic platform theme on Linux unless the user explicitly sets `QT_QPA_PLATFORMTHEME`, avoiding a known GNOME xsettings schema crash on some installations.
+- GUI supports multiple source folders, scan progress, byte-level transfer progress with throughput/ETA, per-file search/status filters, validated settings, and a bounded local recent-operation history.
 - Settings and logs are ordinary local files. No database, cloud service, or network request is required by the application.
 - Tests generate synthetic files in temporary directories; no real media fixtures are stored in Git.
 
@@ -36,5 +37,6 @@ This checklist records the safeguards covered by the code and automated tests. I
 - File-based logs are not a transactional journal. Recovery is based on inspecting the destination and safely rerunning the copy.
 - Filename normalization can change names that are not portable to Windows or common removable filesystems. Review the preview before copying.
 - Metadata availability varies. Files without supported embedded dates fall back to modification time; the application cannot guarantee the original capture/creation date.
-- The GUI uses a single source selection at a time. The CLI accepts multiple `--source` arguments.
+- GUI progress speed and ETA are estimates based on bytes written to temporary destination files; changing source files or storage throughput can affect the estimate.
+- Recent-operation history is a convenience summary, not a transactional recovery journal. It stores source/destination paths and aggregate counts locally.
 - A separate backup is still recommended for irreplaceable data.

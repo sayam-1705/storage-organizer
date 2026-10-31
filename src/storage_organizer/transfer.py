@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 from .hashing import sha256_file
 from .models import FileResult, PlannedFile, RunSummary
@@ -126,7 +127,25 @@ def _reject_symlinked_parents(path: Path) -> None:
         current = current.parent
 
 
-def copy_one(item: PlannedFile, verify_hash: bool = True) -> str:
+def _copy_stream(source, destination, progress=None, chunk_size: int = 1024 * 1024) -> int:
+    """Copy a stream in bounded chunks and optionally report bytes written."""
+    copied = 0
+    while True:
+        chunk = source.read(chunk_size)
+        if not chunk:
+            break
+        destination.write(chunk)
+        copied += len(chunk)
+        if progress:
+            progress(copied)
+    return copied
+
+
+def copy_one(
+    item: PlannedFile,
+    verify_hash: bool = True,
+    copy_progress=None,
+) -> str:
     if item.action == "skip_identical":
         return "skipped"
     if item.source.is_symlink() or not item.source.is_file():
@@ -150,7 +169,7 @@ def copy_one(item: PlannedFile, verify_hash: bool = True) -> str:
         with tempfile.NamedTemporaryFile(prefix=".storage-organizer-", suffix=".partial", dir=item.destination.parent, delete=False) as temp:
             temp_name = temp.name
             with item.source.open("rb") as source:
-                shutil.copyfileobj(source, temp, length=1024 * 1024)
+                _copy_stream(source, temp, progress=copy_progress)
             temp.flush()
             os.fsync(temp.fileno())
         temp_path = Path(temp_name)
@@ -193,6 +212,7 @@ def execute_plan(
     progress=None,
     cancel_event=None,
     file_progress=None,
+    transfer_progress=None,
 ) -> RunSummary:
     """Execute a plan and retain one structured result for every planned file.
 
@@ -215,6 +235,28 @@ def execute_plan(
     )
     total = len(plan)
     done = 0
+    started_at = time.monotonic()
+    bytes_copied = 0
+    total_bytes = 0
+    for planned_file in plan:
+        if planned_file.action != "copy":
+            continue
+        try:
+            total_bytes += planned_file.source.stat().st_size
+        except OSError:
+            # The source may disappear after planning. The per-file error result
+            # remains authoritative; byte totals are best-effort progress hints.
+            continue
+
+    def notify_transfer() -> None:
+        if transfer_progress:
+            transfer_progress(
+                bytes_copied,
+                total_bytes,
+                max(0.0, time.monotonic() - started_at),
+                done,
+                total,
+            )
 
     def notify_file(result: FileResult) -> None:
         if file_progress:
@@ -225,6 +267,7 @@ def execute_plan(
             progress(index, total, item, summary)
 
     cancellation_logged = False
+    notify_transfer()
     for index, (item, file_result) in enumerate(zip(plan, summary.files), start=1):
         # Planning outcomes are already known and should remain visible even when
         # the user cancels the copy phase. Only work that has not started is cancelled.
@@ -236,6 +279,7 @@ def execute_plan(
             summary.errors.append(message)
             done += 1
             notify_file(file_result)
+            notify_transfer()
             if logger:
                 logger.error(message)
             notify_legacy(index, item)
@@ -254,6 +298,7 @@ def execute_plan(
                 message = f"SKIPPED {item.source}: {file_result.reason}"
             done += 1
             notify_file(file_result)
+            notify_transfer()
             if logger:
                 logger.info(message)
             notify_legacy(index, item)
@@ -266,6 +311,7 @@ def execute_plan(
             summary.cancelled_files += 1
             done += 1
             notify_file(file_result)
+            notify_transfer()
             if logger and not cancellation_logged:
                 logger.info("Operation cancelled by user between files")
                 cancellation_logged = True
@@ -275,8 +321,24 @@ def execute_plan(
         file_result.status = "copying"
         file_result.reason = "Copy in progress"
         notify_file(file_result)
+        current_file_bytes = 0
+
+        def on_copy_progress(current_bytes: int) -> None:
+            nonlocal bytes_copied, current_file_bytes
+            increment = max(0, current_bytes - current_file_bytes)
+            current_file_bytes = current_bytes
+            bytes_copied += increment
+            notify_transfer()
+
         try:
-            result = copy_one(item, verify_hash=verify_hash)
+            if transfer_progress:
+                result = copy_one(
+                    item,
+                    verify_hash=verify_hash,
+                    copy_progress=on_copy_progress,
+                )
+            else:
+                result = copy_one(item, verify_hash=verify_hash)
             if result == "copied":
                 file_result.status = "copied"
                 file_result.reason = (
@@ -304,6 +366,7 @@ def execute_plan(
 
         done += 1
         notify_file(file_result)
+        notify_transfer()
         notify_legacy(index, item)
 
     return summary

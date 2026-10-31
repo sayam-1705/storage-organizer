@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import pytest
 from storage_organizer.cli import main
-from storage_organizer.config import load_config
+from storage_organizer.config import load_config, save_config
 
 
 def test_loads_default_config(tmp_path):
@@ -93,3 +93,31 @@ def test_cli_json_reports_copied_duplicate_and_destination_skip(tmp_path, make_f
     assert statuses["two.txt"]["duplicate_of"] == str(source / "one.txt")
     assert statuses["three.txt"]["status"] == "skipped"
     assert statuses["three.txt"]["duplicate_of"].endswith("existing.txt")
+
+
+def test_save_config_round_trips_gui_organization_settings(tmp_path):
+    config_path = tmp_path / "config.toml"
+    config = load_config(tmp_path / "missing.toml")
+    config["organization"]["include_hidden"] = True
+    config["organization"]["date_policy"] = "modified"
+    config["organization"]["unknown_date_folder"] = "Unsorted Items"
+
+    assert save_config(config, config_path) == config_path
+    loaded = load_config(config_path)
+    assert loaded["organization"]["include_hidden"] is True
+    assert loaded["organization"]["date_policy"] == "modified"
+    assert loaded["organization"]["unknown_date_folder"] == "Unsorted Items"
+
+
+def test_save_config_rejects_invalid_settings_without_replacing_existing_file(tmp_path):
+    config_path = tmp_path / "config.toml"
+    config = load_config(tmp_path / "missing.toml")
+    save_config(config, config_path)
+    original = config_path.read_text(encoding="utf-8")
+    config["organization"]["unknown_date_folder"] = "../unsafe"
+
+    with pytest.raises(ValueError, match="safe folder name"):
+        save_config(config, config_path)
+
+    assert config_path.read_text(encoding="utf-8") == original
+    assert not (tmp_path / "config.toml.tmp").exists()

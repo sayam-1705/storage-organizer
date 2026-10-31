@@ -9,10 +9,20 @@ from .storage import validate_paths
 from .transfer import execute_plan
 
 
-def create_plan(sources: list[Path], destination: Path, config_path: Path | None = None):
+def create_plan(
+    sources: list[Path],
+    destination: Path,
+    config_path: Path | None = None,
+    scan_progress=None,
+):
     config = load_config(config_path)
     sources, destination = validate_paths(sources, destination)
-    return build_plan(sources, destination, config), config, sources, destination
+    return (
+        build_plan(sources, destination, config, scan_progress=scan_progress),
+        config,
+        sources,
+        destination,
+    )
 
 
 def organize(
@@ -24,6 +34,8 @@ def organize(
     cancel_event=None,
     file_progress=None,
     plan_ready=None,
+    scan_progress=None,
+    transfer_progress=None,
 ):
     """Plan and execute an organization run.
 
@@ -31,7 +43,12 @@ def organize(
     optional ``file_progress`` callback reports structured per-file transitions.
     Existing ``progress`` callers retain their original callback signature.
     """
-    plan, config, sources, destination = create_plan(sources, destination, config_path)
+    plan, config, sources, destination = create_plan(
+        sources,
+        destination,
+        config_path,
+        scan_progress=scan_progress,
+    )
     if plan_ready:
         plan_ready(plan)
     if logger is None:
@@ -47,5 +64,6 @@ def organize(
         progress=progress,
         cancel_event=cancel_event,
         file_progress=file_progress,
+        transfer_progress=transfer_progress,
     )
     return summary, plan

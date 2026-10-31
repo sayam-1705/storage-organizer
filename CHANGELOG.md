@@ -3,6 +3,8 @@
 - Added structured per-file operation results across planning, transfers, CLI JSON output, and the desktop GUI.
 - Distinguished files already present in the destination from duplicates within the selected source set.
 - Added explicit per-file cancellation and error outcomes, plus deterministic source traversal.
+- Added multi-folder GUI source management, scan and byte-transfer progress with throughput/ETA, and file-result search/status filters.
+- Added a GUI settings dialog with validated atomic configuration saving and a local history of the 10 latest operations.
 
 # Changelog
 

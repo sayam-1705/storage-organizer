@@ -9,6 +9,7 @@
 - Symlinked files and directories are skipped by the scanner to avoid traversing outside the selected tree.
 - Metadata readers are optional and run locally. Do not install third-party metadata packages unless needed.
 - Keep configuration and logs private; they can include file paths and error details.
+- The GUI's recent-operation history stores local source/destination paths and aggregate counts in `recent-runs.json`; keep this file private as well.
 - Test with disposable sample data before using irreplaceable files.
 
 ## Recovery after interruption

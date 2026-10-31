@@ -47,7 +47,12 @@ def _destination_for(root: Path, category: str, stamp: datetime | None, filename
     return root / category / f"{stamp.year:04d}" / MONTHS[stamp.month - 1] / filename
 
 
-def build_plan(sources: list[Path], destination: Path, config: dict) -> list[PlannedFile]:
+def build_plan(
+    sources: list[Path],
+    destination: Path,
+    config: dict,
+    scan_progress=None,
+) -> list[PlannedFile]:
     org = config["organization"]
     unknown = str(org.get("unknown_date_folder", "UnknownDate"))
     policy = str(org.get("date_policy", "metadata_then_modified"))
@@ -77,7 +82,11 @@ def build_plan(sources: list[Path], destination: Path, config: dict) -> list[Pla
     # Later matches are marked as duplicates and retain the original source path.
     planned_sources_by_hash: dict[str, Path] = {}
 
+    scanned = 0
     for source in scan_files(sources, include_hidden=include_hidden):
+        scanned += 1
+        if scan_progress:
+            scan_progress(scanned, source)
         category = classify(source)
         try:
             digest = sha256_file(source)

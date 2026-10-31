@@ -500,3 +500,62 @@ def test_cancellation_preserves_already_known_skip_and_planning_error_results(
     assert summary.failed == 1
     assert summary.cancelled_files == 1
     assert summary.scanned == 3
+
+
+def test_planner_reports_scan_progress_for_each_discovered_file(tmp_path, make_file):
+    source = tmp_path / "source"
+    make_file(source / "a.txt", b"a")
+    make_file(source / "nested" / "b.txt", b"b")
+    events = []
+
+    plan = build_plan(
+        [source],
+        tmp_path / "destination",
+        config_copy(),
+        scan_progress=lambda count, path: events.append((count, path)),
+    )
+
+    assert len(plan) == 2
+    assert [count for count, _path in events] == [1, 2]
+    assert {path.name for _count, path in events} == {"a.txt", "b.txt"}
+
+
+def test_transfer_progress_reports_monotonic_bytes_and_final_totals(tmp_path, make_file):
+    source = tmp_path / "source"
+    make_file(source / "large-a.bin", b"a" * (2 * 1024 * 1024 + 17))
+    make_file(source / "large-b.bin", b"b" * (1024 * 1024 + 9))
+    plan = build_plan([source], tmp_path / "destination", config_copy())
+    events = []
+
+    summary = execute_plan(
+        plan,
+        transfer_progress=lambda copied, total_bytes, elapsed, done, total: events.append(
+            (copied, total_bytes, elapsed, done, total)
+        ),
+    )
+
+    assert summary.copied == 2
+    assert events
+    copied_values = [event[0] for event in events]
+    assert copied_values == sorted(copied_values)
+    expected_bytes = sum(item.source.stat().st_size for item in plan)
+    assert events[-1][0] == expected_bytes
+    assert events[-1][1] == expected_bytes
+    assert events[-1][3:] == (2, 2)
+    assert all(event[2] >= 0 for event in events)
+
+
+def test_transfer_progress_handles_zero_byte_files(tmp_path, make_file):
+    source = tmp_path / "source"
+    make_file(source / "empty.txt", b"")
+    plan = build_plan([source], tmp_path / "destination", config_copy())
+    events = []
+
+    summary = execute_plan(
+        plan,
+        transfer_progress=lambda *values: events.append(values),
+    )
+
+    assert summary.copied == 1
+    assert events[-1][0:2] == (0, 0)
+    assert events[-1][3:] == (1, 1)

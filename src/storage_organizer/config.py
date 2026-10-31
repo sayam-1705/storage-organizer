@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import tomllib
@@ -71,6 +72,40 @@ def load_config(path: Path | None = None) -> dict:
     if logging_directory is not None and not isinstance(logging_directory, str):
         raise ValueError("logging.directory must be a path string")
     return config
+
+
+def save_config(config: dict, path: Path | None = None) -> Path:
+    """Validate and atomically save a complete application configuration."""
+    target = path or (user_data_dir() / "config.toml")
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    lines: list[str] = []
+    for section in ("organization", "transfer", "duplicates", "logging"):
+        values = config.get(section, {})
+        if not isinstance(values, dict):
+            raise ValueError(f"Configuration section [{section}] must be a table")
+        lines.append(f"[{section}]")
+        for key, value in values.items():
+            if isinstance(value, bool):
+                rendered = "true" if value else "false"
+            elif isinstance(value, str):
+                rendered = json.dumps(value, ensure_ascii=False)
+            elif isinstance(value, (int, float)):
+                rendered = str(value)
+            else:
+                raise ValueError(f"Unsupported value for [{section}].{key}")
+            lines.append(f"{key} = {rendered}")
+        lines.append("")
+
+    temporary = target.with_name(target.name + ".tmp")
+    try:
+        temporary.write_text("\n".join(lines), encoding="utf-8")
+        # Reuse the same strict parser/validator used when loading the file.
+        load_config(temporary)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return target
 
 
 def ensure_user_data_dir() -> Path:

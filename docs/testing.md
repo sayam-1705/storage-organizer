@@ -12,6 +12,8 @@ Coverage areas:
 - Identical-content skipping, same-name/different-content renaming, and duplicate source content with the original source path recorded.
 - Copy-only behavior, SHA-256 verification, and repeat-run idempotence.
 - Per-file copying/copied/skipped/duplicate/error/cancelled states, unreadable-source planning errors, complete result lists, and aggregate-count consistency.
+- Scan progress callbacks, monotonic byte-level transfer progress, final byte totals, and zero-byte file handling.
+- Multiple-source preference persistence, recent-operation history bounds, and validated atomic GUI settings writes.
 - Configuration validation and CLI JSON/text behavior.
 
 Run locally:
