@@ -17,6 +17,7 @@ The application has two entry points (CLI and optional PySide6 GUI) and one shar
 - `logging_setup.py`: rotating local log.
 - `preferences.py`: atomic JSON persistence for multiple GUI source paths and the bounded recent-operation history; no database.
 - `cli.py`, `gui.py`: interfaces only; no duplicated organization logic. The GUI uses a virtualized Qt result model and proxy filters rather than creating a Qt item for every cell, and batches/rate-limits progress updates for large collections.
+- Native packaging: `packaging/entrypoints/gui.py` is the PyInstaller GUI launcher and frozen-app smoke-test entry point; `scripts/build_desktop.py` builds a native onedir bundle, while the AppImage, macOS DMG, and Inno Setup definitions wrap that same bundle without changing the transfer engine.
 
 ## Transfer protocol
 

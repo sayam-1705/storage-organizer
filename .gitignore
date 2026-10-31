@@ -6,6 +6,7 @@ __pycache__/
 venv/
 build/
 dist/
+release-assets/
 .pytest_cache/
 .coverage
 coverage.xml
@@ -102,3 +103,8 @@ core.*
 
 # Development related
 *.patch
+
+# Native desktop release artifacts
+*.AppImage
+*.dmg
+*.exe

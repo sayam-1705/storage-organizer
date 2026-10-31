@@ -9,12 +9,16 @@ publication is required.
 
 **Latest stable release:** [Download Storage Organizer](https://github.com/sayam-1705/storage-organizer/releases/latest)
 
-The release includes:
+The existing stable release currently provides the Python wheel and source distribution. Phase 4 adds workflows to build these native desktop targets for a subsequent release:
 
-- **Python wheel:** Recommended for installation.
-- **Source distribution:** For inspecting or rebuilding the package.
+- **Windows x64:** Per-user `StorageOrganizer-Setup-VERSION-windows-x64.exe` installer.
+- **macOS Apple Silicon:** `StorageOrganizer-VERSION-macos-arm64.dmg`.
+- **macOS Intel:** `StorageOrganizer-VERSION-macos-x86_64.dmg`.
+- **Linux x86_64:** `StorageOrganizer-VERSION-linux-x86_64.AppImage`.
+- **Python wheel and source distribution:** Remain available for Python-based installation and development.
+- **SHA256SUMS.txt:** Planned checksums for every release package.
 
-Requirements: Python 3.11 or newer.
+The release workflow will not publish native installers until the repository Actions variable `NATIVE_RELEASE_LICENSE_APPROVED=true` has been set following a review of the platform builds and Qt/PySide6 redistribution obligations. The initial packages will be unsigned and subject to OS trust warnings. Desktop packages are designed to run the GUI without a separate Python installation; they bundle Pillow and pypdf for richer image/PDF metadata. `ffprobe` remains an optional system dependency. The Linux AppImage targets x86_64 and is built on Ubuntu 22.04. Python packages require Python 3.11 or newer.
 
 For installation instructions, see [Install a Released Version](#install-a-released-version).
 
@@ -39,6 +43,25 @@ For installation instructions, see [Install a Released Version](#install-a-relea
 
 Download the latest stable version from the
 [GitHub Releases page](https://github.com/sayam-1705/storage-organizer/releases/latest).
+
+### Native desktop installation (planned for a subsequent release)
+
+The current v1.0.1 release does not yet contain these native installer files. Once a later release has passed the native build and licensing gates, choose the artifact matching your operating system and CPU architecture. The installer contains the GUI and its Python/Qt runtime.
+
+**Windows x64:** Download `StorageOrganizer-Setup-VERSION-windows-x64.exe` and run it. The default installation is per-user under `%LOCALAPPDATA%\Programs\Storage Organizer`; administrator rights are not required. The installer is not code-signed yet, so SmartScreen may show an unknown-publisher warning. Verify the SHA-256 checksum and source before deciding whether to continue. Launch **Storage Organizer** from the Start menu.
+
+**macOS:** Download the `arm64` DMG for Apple Silicon or the `x86_64` DMG for an Intel Mac. These packages target macOS 14 or newer. Open the disk image and drag `StorageOrganizer.app` to **Applications**. The first release packages are not code-signed or notarized, so Gatekeeper may show a warning. When you trust the download, Control-click the app and choose **Open** to approve the first launch.
+
+**Linux x86_64:** Download `StorageOrganizer-VERSION-linux-x86_64.AppImage`, then run:
+
+```bash
+chmod +x StorageOrganizer-VERSION-linux-x86_64.AppImage
+./StorageOrganizer-VERSION-linux-x86_64.AppImage
+```
+
+The AppImage is built on Ubuntu 22.04 and requires a compatible x86_64 Linux system with glibc 2.35 or newer and working desktop/graphics libraries. If FUSE is unavailable, try `APPIMAGE_EXTRACT_AND_RUN=1 ./StorageOrganizer-VERSION-linux-x86_64.AppImage`.
+
+Verify the selected downloaded file against its matching entry in `SHA256SUMS.txt` before installation. On Linux/macOS, run `sha256sum <downloaded-file>` and compare the result with the matching filename entry; on Windows PowerShell use `Get-FileHash -Algorithm SHA256 <downloaded-file>` and compare the reported hash with that entry.
 
 ### CLI installation
 
@@ -180,13 +203,13 @@ python -m pip install -e ".[test]"
 python -m pytest --cov=storage_organizer --cov-report=term-missing
 ```
 
-CI runs these tests on Windows, macOS, and Ubuntu for Python 3.11, 3.12, 3.13, and 3.14, then smoke-tests the CLI and headless GUI initialization. The tests exercise classification, deterministic recursive scanning, path safety, dry-run, category/date routing, destination skips versus source duplicates, per-file success/error/cancellation outcomes, scan/transfer progress, filename conflicts, copy verification, repeat runs, configuration validation, preference/history persistence, and CLI JSON results.
+CI runs these tests on Windows, macOS, and Ubuntu for Python 3.11, 3.12, 3.13, and 3.14, then smoke-tests the CLI and headless GUI initialization. A separate native packaging matrix is configured to build and execute the frozen GUI on Windows x64, macOS arm64, macOS Intel, and Ubuntu x86_64; its first live run is pending after these changes are pushed. The tests exercise classification, deterministic recursive scanning, path safety, dry-run, category/date routing, destination skips versus source duplicates, per-file success/error/cancellation outcomes, scan/transfer progress, filename conflicts, copy verification, repeat runs, configuration validation, preference/history persistence, and CLI JSON results.
 
 For large synthetic workloads, run `python scripts/benchmark_large_dataset.py --files 10000 --file-size 4096`. Add `--copy` to include verified transfer throughput, `--track-memory` to sample planning allocations (with profiling overhead), or `--json` for machine-readable results. The benchmark creates and removes its own temporary dataset; it does not read real source drives.
 
 ## Production-readiness checklist
 
-See [docs/production-readiness.md](docs/production-readiness.md) for the release checklist, safeguards, and remaining platform/filesystem limitations. CI tests Windows, macOS, and Ubuntu across Python 3.11, 3.12, 3.13, and 3.14. It runs unit and integration tests, CLI and synthetic end-to-end smoke tests, headless Qt GUI initialization, source compilation, distribution builds, dependency consistency checks, and a guard against tracked media or binary fixtures.
+See [docs/production-readiness.md](docs/production-readiness.md) for the release checklist, safeguards, and remaining platform/filesystem limitations. See [docs/packaging.md](docs/packaging.md) for native build targets, installer construction, signing status, and checksum verification. CI tests Windows, macOS, and Ubuntu across Python 3.11, 3.12, 3.13, and 3.14. It runs unit and integration tests, CLI and synthetic end-to-end smoke tests, headless Qt GUI initialization, source compilation, distribution builds, dependency consistency checks, and a guard against tracked media or binary fixtures.
 
 ## Known limitations
 

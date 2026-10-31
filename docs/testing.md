@@ -38,3 +38,14 @@ python scripts/benchmark_large_dataset.py --files 100000 --file-size 4096 --dire
 ```
 
 The tool reports scanner and planner throughput and optional verified-copy throughput. Add `--track-memory` to measure peak Python allocation during planning; memory instrumentation adds profiling overhead. All generated data lives in a temporary directory and is removed automatically. Compare results on the actual filesystem and storage device you intend to use; synthetic results are not a guarantee for USB, network, or removable media.
+
+
+## Native packaging tests
+
+The regular CI pipeline builds the PyInstaller GUI bundle on Windows x64, macOS arm64, macOS Intel, and Ubuntu x86_64 using the versions pinned in `packaging/constraints-desktop.txt`. Each frozen bundle runs `--smoke-test`, which constructs and closes the real `MainWindow` using Qt's offscreen platform plugin. Unit tests also validate platform command construction, AppDir layout, and Windows installer policy.
+
+On release tags, the release workflow additionally compiles and silently installs/tests the Inno Setup installer, creates and verifies the macOS DMG, and builds/runs the AppImage using the pinned AppImageKit `appimagetool` version. All release assets receive SHA-256 checksums before publication.
+
+## Desktop packaging checks
+
+The packaging unit tests validate the native build commands, version sourcing, cross-platform build rejection, AppImage layout/smoke-test orchestration, Windows per-user installer settings, and third-party notice propagation. Actual frozen binaries, installer execution, DMG mounting, AppImage execution, and Qt licensing review are performed on native runners/release review and are not substituted by mocked unit tests.

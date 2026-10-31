@@ -1,0 +1,6 @@
+# Pin GUI and freezer versions used to build repeatable native release artifacts.
+# PySide6 6.12.0 publishes macOS universal2 and Linux manylinux_2_34 wheels.
+PySide6==6.12.0
+PyInstaller==6.22.3
+Pillow==13.0.0
+pypdf==6.21.4

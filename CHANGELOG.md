@@ -9,6 +9,10 @@
 - Replaced the current-operation `QTableWidget` with a virtualized Qt table model and proxy filtering for large result sets.
 - Batched per-file GUI updates and rate-limited byte-progress notifications to reduce GUI event-queue pressure.
 - Added a disposable large-dataset benchmark for scan, plan, memory, and optional verified-copy throughput.
+- Added native PyInstaller desktop bundles with headless frozen-application smoke tests.
+- Added a per-user Windows x64 installer, Apple Silicon and Intel macOS disk images, and an x86_64 Linux AppImage release pipeline.
+- Added release artifact validation, SHA-256 checksums, and installation/build documentation for native packages.
+- Gated native release publication on an explicit Qt/PySide6 license-review approval variable.
 - Fixed the synthetic benchmark on macOS by resolving the OS temporary-directory alias before exercising safe-copy path checks.
 
 # Changelog

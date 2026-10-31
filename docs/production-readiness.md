@@ -1,4 +1,4 @@
-# Production-readiness audit (v1.0.1)
+# Production-readiness audit
 
 This checklist records the safeguards covered by the code and automated tests. It is not a claim that every operating system/filesystem combination has been physically tested.
 
@@ -18,16 +18,23 @@ This checklist records the safeguards covered by the code and automated tests. I
 - GUI supports multiple source folders, scan progress, byte-level transfer progress with throughput/ETA, per-file search/status filters, validated settings, and a bounded local recent-operation history.
 - Settings and logs are ordinary local files. No database, cloud service, or network request is required by the application.
 - Tests generate synthetic files in temporary directories; no real media fixtures are stored in Git.
+- Native desktop release workflows are configured for native OS/architecture runners: Windows x64 installer, macOS arm64 and Intel DMGs, and Linux x86_64 AppImage.
+- Native release workflows are configured to validate frozen applications and publish SHA-256 checksums. These checks remain pending until the Phase 4 workflows run against a pushed commit/tag.
+- Third-party license compliance: the exact Qt/PySide6/Qt plugin inventory, corresponding source availability, license texts, and relinking/replacement rights must be verified before native release publication. The release workflow is gated on the `NATIVE_RELEASE_LICENSE_APPROVED=true` repository Actions variable, which must remain unset until that review is complete.
 
 ## Required release checks
 
 - [x] CI passes on Ubuntu, Windows, and macOS for every Python version in the workflow matrix.
 - [x] GUI initialization smoke test passes on all CI operating systems.
 - [x] Review the output of `python -m pytest --cov=storage_organizer --cov-report=term-missing`.
-- [x] Test with a small disposable dataset on each target OS and the actual filesystem types you intend to support.
-- [x] Test a full destination, unplug/reconnect behavior, and interruption during a large-file copy on expendable storage.
+- [ ] Manually test a small disposable dataset on representative physical filesystems (for example NTFS, exFAT, APFS, and ext4). CI uses generated files and does not replace this check.
+- [ ] Test a full destination, unplug/reconnect behavior, and interruption during a large-file copy on expendable storage.
 - [x] Confirm generated wheel/sdist contents do not contain private files or media assets.
-- [x] Tag and publish only after all CI checks pass.
+- [ ] Build and smoke-test frozen desktop bundles on the native target runners after the Phase 4 workflow is merged.
+- [ ] Validate Windows installer, macOS disk images, and Linux AppImage in a tagged release workflow.
+- [ ] Review third-party license obligations and publish the required notices/source/relinking materials for bundled Qt/PySide6 components.
+- [ ] Publish SHA-256 checksums for all release assets.
+- [ ] Tag and publish only after all CI, native-package, and third-party license checks pass.
 
 ## Known limits
 

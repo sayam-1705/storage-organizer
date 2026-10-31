@@ -8,7 +8,7 @@ version = "1.0.1"
 description = "Offline, cross-platform organizer for files on local and removable storage"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = "MIT"
 authors = [{name = "Storage Organizer contributors"}]
 dependencies = []
 
@@ -16,6 +16,7 @@ dependencies = []
 gui = ["PySide6>=6.6"]
 media = ["Pillow>=10.0", "pypdf>=4.0"]
 test = ["pytest>=8.0", "pytest-cov>=5.0"]
+packaging = ["PyInstaller>=6.22,<7"]
 all = ["PySide6>=6.6", "Pillow>=10.0", "pypdf>=4.0"]
 
 [project.scripts]
