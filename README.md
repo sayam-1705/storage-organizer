@@ -9,16 +9,21 @@ publication is required.
 
 **Latest stable release:** [Download Storage Organizer](https://github.com/sayam-1705/storage-organizer/releases/latest)
 
-The existing stable release currently provides the Python wheel and source distribution. Phase 4 adds workflows to build these native desktop targets for a subsequent release:
+**Latest stable release: [v1.0.2](https://github.com/sayam-1705/storage-organizer/releases/tag/v1.0.2).** It includes standalone desktop installers for Windows x64, macOS Apple Silicon, macOS Intel, and Linux x86_64, plus Python distributions and SHA-256 checksums.
 
-- **Windows x64:** Per-user `StorageOrganizer-Setup-VERSION-windows-x64.exe` installer.
-- **macOS Apple Silicon:** `StorageOrganizer-VERSION-macos-arm64.dmg`.
-- **macOS Intel:** `StorageOrganizer-VERSION-macos-x86_64.dmg`.
-- **Linux x86_64:** `StorageOrganizer-VERSION-linux-x86_64.AppImage`.
-- **Python wheel and source distribution:** Remain available for Python-based installation and development.
-- **SHA256SUMS.txt:** Planned checksums for every release package.
+Release assets:
 
-The release workflow will not publish native installers until the repository Actions variable `NATIVE_RELEASE_LICENSE_APPROVED=true` has been set following a review of the platform builds and Qt/PySide6 redistribution obligations. The initial packages will be unsigned and subject to OS trust warnings. Desktop packages are designed to run the GUI without a separate Python installation; they bundle Pillow and pypdf for richer image/PDF metadata. `ffprobe` remains an optional system dependency. The Linux AppImage targets x86_64 and is built on Ubuntu 22.04. Python packages require Python 3.11 or newer.
+- **Windows x64:** `StorageOrganizer-Setup-1.0.2-windows-x64.exe`
+- **macOS Apple Silicon:** `StorageOrganizer-1.0.2-macos-arm64.dmg`
+- **macOS Intel:** `StorageOrganizer-1.0.2-macos-x86_64.dmg`
+- **Linux x86_64:** `StorageOrganizer-1.0.2-linux-x86_64.AppImage`
+- **Python wheel:** `storage_organizer-1.0.2-py3-none-any.whl`
+- **Python source distribution:** `storage_organizer-1.0.2.tar.gz`
+- **Checksums:** `SHA256SUMS.txt`
+
+The native packages run the GUI without a separate Python installation. They bundle Pillow and pypdf for richer image/PDF metadata; `ffprobe` remains an optional system dependency. The Linux AppImage targets x86_64, is built on Ubuntu 22.04, and requires glibc 2.35 or newer. The macOS packages target macOS 14 or newer. Python packages require Python 3.11 or newer.
+
+The initial native packages are not code-signed or notarized and may trigger SmartScreen or Gatekeeper warnings. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and [docs/packaging.md](docs/packaging.md) for the Qt/PySide6 redistribution review requirements. The automated release publication job remains gated on `NATIVE_RELEASE_LICENSE_APPROVED=true`; do not enable that variable until the exact bundled components, license texts, source materials, and applicable replace/relink obligations have been reviewed and satisfied. A GitHub Release being present does not itself prove that this review is complete.
 
 For installation instructions, see [Install a Released Version](#install-a-released-version).
 
@@ -44,9 +49,9 @@ For installation instructions, see [Install a Released Version](#install-a-relea
 Download the latest stable version from the
 [GitHub Releases page](https://github.com/sayam-1705/storage-organizer/releases/latest).
 
-### Native desktop installation (planned for a subsequent release)
+### Native desktop installation
 
-The current v1.0.1 release does not yet contain these native installer files. Once a later release has passed the native build and licensing gates, choose the artifact matching your operating system and CPU architecture. The installer contains the GUI and its Python/Qt runtime.
+The [v1.0.2 release](https://github.com/sayam-1705/storage-organizer/releases/tag/v1.0.2) contains the native installer files. Choose the artifact matching your operating system and CPU architecture. Each desktop installer contains the GUI and its Python/Qt runtime.
 
 **Windows x64:** Download `StorageOrganizer-Setup-VERSION-windows-x64.exe` and run it. The default installation is per-user under `%LOCALAPPDATA%\Programs\Storage Organizer`; administrator rights are not required. The installer is not code-signed yet, so SmartScreen may show an unknown-publisher warning. Verify the SHA-256 checksum and source before deciding whether to continue. Launch **Storage Organizer** from the Start menu.
 
@@ -83,11 +88,11 @@ Windows PowerShell:
 .venv\Scripts\Activate.ps1
 ```
 
-Install the v1.0.1 wheel directly from GitHub:
+Install the v1.0.2 wheel directly from GitHub:
 
 ```bash
 python -m pip install --upgrade pip
-python -m pip install "storage-organizer @ https://github.com/sayam-1705/storage-organizer/releases/download/v1.0.1/storage_organizer-1.0.1-py3-none-any.whl"
+python -m pip install "storage-organizer @ https://github.com/sayam-1705/storage-organizer/releases/download/v1.0.2/storage_organizer-1.0.2-py3-none-any.whl"
 ```
 
 Verify the installation:
@@ -102,7 +107,7 @@ storage-organizer --help
 To install the GUI and optional media metadata dependencies:
 
 ```bash
-python -m pip install "storage-organizer[gui,media] @ https://github.com/sayam-1705/storage-organizer/releases/download/v1.0.1/storage_organizer-1.0.1-py3-none-any.whl"
+python -m pip install "storage-organizer[gui,media] @ https://github.com/sayam-1705/storage-organizer/releases/download/v1.0.2/storage_organizer-1.0.2-py3-none-any.whl"
 ```
 
 Launch the desktop application:
@@ -203,7 +208,7 @@ python -m pip install -e ".[test]"
 python -m pytest --cov=storage_organizer --cov-report=term-missing
 ```
 
-CI runs these tests on Windows, macOS, and Ubuntu for Python 3.11, 3.12, 3.13, and 3.14, then smoke-tests the CLI and headless GUI initialization. A separate native packaging matrix is configured to build and execute the frozen GUI on Windows x64, macOS arm64, macOS Intel, and Ubuntu x86_64; its first live run is pending after these changes are pushed. The tests exercise classification, deterministic recursive scanning, path safety, dry-run, category/date routing, destination skips versus source duplicates, per-file success/error/cancellation outcomes, scan/transfer progress, filename conflicts, copy verification, repeat runs, configuration validation, preference/history persistence, and CLI JSON results.
+CI runs these tests on Windows, macOS, and Ubuntu for Python 3.11, 3.12, 3.13, and 3.14, then smoke-tests the CLI, synthetic end-to-end copy behavior, benchmark tooling, and GUI initialization. The latest main-branch CI run passed all 12 Python matrix jobs and all four native frozen-desktop smoke jobs. The v1.0.2 tagged release workflow also completed its Python and four native installer build jobs successfully; the installer artifacts were manually tested before publication. See [GitHub Actions](https://github.com/sayam-1705/storage-organizer/actions) for current results. The tests exercise classification, deterministic recursive scanning, path safety, dry-run, category/date routing, destination skips versus source duplicates, per-file success/error/cancellation outcomes, scan/transfer progress, filename conflicts, copy verification, repeat runs, configuration validation, preference/history persistence, and CLI JSON results.
 
 For large synthetic workloads, run `python scripts/benchmark_large_dataset.py --files 10000 --file-size 4096`. Add `--copy` to include verified transfer throughput, `--track-memory` to sample planning allocations (with profiling overhead), or `--json` for machine-readable results. The benchmark creates and removes its own temporary dataset; it does not read real source drives.
 
@@ -215,7 +220,7 @@ See [docs/production-readiness.md](docs/production-readiness.md) for the release
 
 - Metadata coverage varies by file type and optional tools. The fallback is modification time, not a guaranteed original creation date.
 - FAT32 cannot store individual files larger than 4 GB; copying such files fails safely and is reported.
-- The first release is copy-only; it never deletes source files.
+- Storage Organizer is copy-only; it never deletes source files.
 - A file-based log is not a transactional journal. After a crash, rerun the operation; destination hashes are rechecked and identical content is skipped.
 - Filesystems differ in filename rules and metadata support. Test with a small sample before processing a large drive.
 

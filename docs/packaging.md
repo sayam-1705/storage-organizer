@@ -25,17 +25,23 @@ python -m pip install -e ".[gui,media,packaging]" -c packaging/constraints-deskt
 python scripts/build_desktop.py --target linux --smoke-test
 ```
 
-Run the builder on the matching native OS. Supported `--target` values are `windows`, `macos`, and `linux`; cross-building between operating systems is intentionally rejected. The builder writes a PyInstaller onedir bundle under `dist/` and executes its frozen GUI in Qt's offscreen mode to verify imports and full MainWindow construction.
+Run the builder on the matching native OS. Supported `--target` values are `windows`, `macos`, and `linux`; cross-building between operating systems is intentionally rejected. The builder writes a PyInstaller onedir bundle under `dist/` and runs the frozen entry point's headless runtime smoke check. That check verifies the frozen application and required Qt modules can be imported; it deliberately does not create a `QApplication` on hosted runners. The separate Python CI job constructs and closes `MainWindow` with the system Python environment.
 
 For Linux, install `libfuse2` and run the AppImage packager with AppImageKit's `appimagetool` 1.9.1:
 
 ```bash
 python scripts/package_appimage.py \
-  --version 1.0.1 \
+  --version 1.0.2 \
   --appimagetool ./appimagetool-x86_64.AppImage
 ```
 
 For Windows, compile `packaging/windows/storage-organizer.iss` with Inno Setup using `/DAppVersion=VERSION`. For macOS, run `scripts/package_macos_dmg.sh VERSION` after the native PyInstaller build. The release workflow performs these steps on native GitHub-hosted runners and uploads the resulting packages to the GitHub Release.
+
+## Validated v1.0.2 release
+
+The [v1.0.2 GitHub Release](https://github.com/sayam-1705/storage-organizer/releases/tag/v1.0.2) contains seven assets: the Windows x64 installer, macOS ARM64 and Intel DMGs, Linux x86_64 AppImage, Python wheel, source distribution, and `SHA256SUMS.txt`. The v1.0.2 release workflow completed its Python build and all four native packaging jobs successfully. The maintainer also reports successful manual installation and operation tests on the target systems. Review the [release page](https://github.com/sayam-1705/storage-organizer/releases/tag/v1.0.2) for the exact uploaded files and hashes.
+
+The automated `publish` job is conditional on the `NATIVE_RELEASE_LICENSE_APPROVED=true` repository variable. The v1.0.2 release exists, but that fact alone does not establish that the Qt/PySide6 licensing review has been completed. Confirm the licensing and redistribution obligations independently before enabling automated publication for a future release.
 
 ## Third-party licensing
 

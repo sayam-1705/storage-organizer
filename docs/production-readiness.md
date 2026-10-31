@@ -19,10 +19,12 @@ This checklist records the safeguards covered by the code and automated tests. I
 - Settings and logs are ordinary local files. No database, cloud service, or network request is required by the application.
 - Tests generate synthetic files in temporary directories; no real media fixtures are stored in Git.
 - Native desktop release workflows are configured for native OS/architecture runners: Windows x64 installer, macOS arm64 and Intel DMGs, and Linux x86_64 AppImage.
-- Native release workflows are configured to validate frozen applications and publish SHA-256 checksums. These checks remain pending until the Phase 4 workflows run against a pushed commit/tag.
+- The v1.0.2 tagged release workflow completed successfully: the Python distribution build and all four native desktop installer jobs passed. The published release contains the Windows x64 installer, macOS ARM64 and Intel DMGs, Linux x86_64 AppImage, Python wheel, source distribution, and `SHA256SUMS.txt`. The installed packages were also manually tested by the maintainer.
 - Third-party license compliance: the exact Qt/PySide6/Qt plugin inventory, corresponding source availability, license texts, and relinking/replacement rights must be verified before native release publication. The release workflow is gated on the `NATIVE_RELEASE_LICENSE_APPROVED=true` repository Actions variable, which must remain unset until that review is complete.
 
 ## Required release checks
+
+The v1.0.2 release build and installer QA are complete. The items below distinguish automated validation and maintainer-reported installer testing from platform and legal checks that still require separate evidence.
 
 - [x] CI passes on Ubuntu, Windows, and macOS for every Python version in the workflow matrix.
 - [x] GUI initialization smoke test passes on all CI operating systems.
@@ -30,11 +32,18 @@ This checklist records the safeguards covered by the code and automated tests. I
 - [ ] Manually test a small disposable dataset on representative physical filesystems (for example NTFS, exFAT, APFS, and ext4). CI uses generated files and does not replace this check.
 - [ ] Test a full destination, unplug/reconnect behavior, and interruption during a large-file copy on expendable storage.
 - [x] Confirm generated wheel/sdist contents do not contain private files or media assets.
-- [ ] Build and smoke-test frozen desktop bundles on the native target runners after the Phase 4 workflow is merged.
-- [ ] Validate Windows installer, macOS disk images, and Linux AppImage in a tagged release workflow.
-- [ ] Review third-party license obligations and publish the required notices/source/relinking materials for bundled Qt/PySide6 components.
-- [ ] Publish SHA-256 checksums for all release assets.
-- [ ] Tag and publish only after all CI, native-package, and third-party license checks pass.
+- [x] Build and smoke-test frozen desktop bundles on the native target runners.
+- [x] Validate the Windows installer, both macOS disk images, and Linux AppImage in the v1.0.2 tagged release workflow.
+- [x] Publish SHA-256 checksums for all seven release assets and verify the checksum file is attached to the release.
+- [ ] Review third-party license obligations and publish any required notices/source/relinking materials for bundled Qt/PySide6 components. Do not treat successful installer testing as a substitute for this review.
+- [ ] Complete representative physical-filesystem and interruption testing before claiming support for those scenarios.
+
+## Repository maintenance validation
+
+- [x] Main-branch CI passed on the 12-job Python/OS matrix and four native frozen-desktop smoke jobs.
+- [x] CodeQL completed successfully on the main branch and uploaded its analysis results.
+- [x] Dependency Graph was enabled in repository settings; the two open Dependabot action-update pull requests then passed Dependency Review, CI, and CodeQL.
+- [x] Active GitHub rulesets protect `main` and `v*` release tags. The `main` ruleset currently requires the 12 Python matrix checks; adding desktop smoke, CodeQL, and Dependency Review as required checks remains a recommended administrative improvement.
 
 ## Known limits
 
