@@ -7,7 +7,7 @@ The application has two entry points (CLI and optional PySide6 GUI) and one shar
 ## Modules
 
 - `storage.py`: path normalization, source/destination overlap validation, symlink/junction checks, free-space helper.
-- `scanner.py`: recursive traversal without following symlinks; hidden files are configurable.
+- `scanner.py`: deterministic `os.scandir` traversal without following symlinks; cached directory-entry type information avoids redundant per-file metadata calls, and hidden files are configurable.
 - `classifier.py`: extension-to-category mapping.
 - `metadata.py`: optional local metadata extraction and filesystem timestamp fallback.
 - `planner.py`: destination layout, cross-platform filename normalization, conflict planning, and explicit destination-skip versus source-duplicate classification.
@@ -16,7 +16,7 @@ The application has two entry points (CLI and optional PySide6 GUI) and one shar
 - `config.py`: TOML config, validated atomic settings writes, and platform-specific user config directory.
 - `logging_setup.py`: rotating local log.
 - `preferences.py`: atomic JSON persistence for multiple GUI source paths and the bounded recent-operation history; no database.
-- `cli.py`, `gui.py`: interfaces only; no duplicated organization logic.
+- `cli.py`, `gui.py`: interfaces only; no duplicated organization logic. The GUI uses a virtualized Qt result model and proxy filters rather than creating a Qt item for every cell, and batches/rate-limits progress updates for large collections.
 
 ## Transfer protocol
 

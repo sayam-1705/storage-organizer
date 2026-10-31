@@ -16,6 +16,12 @@ class TransferError(RuntimeError):
     pass
 
 
+# UI progress is intentionally rate-limited. Byte-copy callbacks still update
+# the internal counters for every chunk, but observers are notified at most
+# ten times per second, plus the initial and final snapshots.
+TRANSFER_PROGRESS_INTERVAL_SECONDS = 0.1
+
+
 def _rename_noreplace(source: Path, target: Path) -> bool:
     """Atomically rename without replacing an existing target where the OS supports it.
 
@@ -248,15 +254,23 @@ def execute_plan(
             # remains authoritative; byte totals are best-effort progress hints.
             continue
 
-    def notify_transfer() -> None:
-        if transfer_progress:
-            transfer_progress(
-                bytes_copied,
-                total_bytes,
-                max(0.0, time.monotonic() - started_at),
-                done,
-                total,
-            )
+    last_transfer_notification = 0.0
+
+    def notify_transfer(force: bool = False) -> None:
+        nonlocal last_transfer_notification
+        if not transfer_progress:
+            return
+        now = time.monotonic()
+        if not force and now - last_transfer_notification < TRANSFER_PROGRESS_INTERVAL_SECONDS:
+            return
+        last_transfer_notification = now
+        transfer_progress(
+            bytes_copied,
+            total_bytes,
+            max(0.0, now - started_at),
+            done,
+            total,
+        )
 
     def notify_file(result: FileResult) -> None:
         if file_progress:
@@ -267,7 +281,7 @@ def execute_plan(
             progress(index, total, item, summary)
 
     cancellation_logged = False
-    notify_transfer()
+    notify_transfer(force=True)
     for index, (item, file_result) in enumerate(zip(plan, summary.files), start=1):
         # Planning outcomes are already known and should remain visible even when
         # the user cancels the copy phase. Only work that has not started is cancelled.
@@ -369,4 +383,7 @@ def execute_plan(
         notify_transfer()
         notify_legacy(index, item)
 
+    # Always deliver a final snapshot, even for short operations where the
+    # rate limiter suppresses every intermediate progress notification.
+    notify_transfer(force=True)
     return summary

@@ -15,7 +15,9 @@ if sys.platform.startswith("linux"):
     os.environ.setdefault("QT_QPA_PLATFORMTHEME", "generic")
 
 try:
-    from PySide6.QtCore import QObject, QThread, Signal
+    from PySide6.QtCore import (
+        QAbstractTableModel, QModelIndex, QObject, QSortFilterProxyModel, QThread, QTimer, Qt, Signal,
+    )
     from PySide6.QtWidgets import (
         QAbstractItemView,
         QApplication,
@@ -34,6 +36,7 @@ try:
         QMessageBox,
         QPushButton,
         QProgressBar,
+        QTableView,
         QTableWidget,
         QTableWidgetItem,
         QTabWidget,
@@ -60,12 +63,127 @@ from .preferences import (
 )
 
 
+class FileResultsTableModel(QAbstractTableModel):
+    """Virtualized table model for operation results, suitable for large plans."""
+
+    HEADERS = ("File", "Source", "Destination", "Status", "Details")
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._rows: list[list[str]] = []
+        self._row_by_source: dict[str, int] = {}
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self._rows)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self.HEADERS)
+
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or role != Qt.ItemDataRole.DisplayRole:
+            return None
+        return self._rows[index.row()][index.column()]
+
+    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole):
+        if role != Qt.ItemDataRole.DisplayRole:
+            return None
+        if orientation == Qt.Orientation.Horizontal and 0 <= section < len(self.HEADERS):
+            return self.HEADERS[section]
+        if orientation == Qt.Orientation.Vertical:
+            return str(section + 1)
+        return None
+
+    def set_plan(self, plan) -> None:
+        self.beginResetModel()
+        self._rows = []
+        self._row_by_source.clear()
+        for planned_file in plan:
+            if planned_file.action == "copy":
+                status = "Pending"
+            elif planned_file.action == "error":
+                status = "Error"
+            elif planned_file.skip_reason == "source_duplicate":
+                status = "Duplicate"
+            else:
+                status = "Skipped"
+            row = [
+                planned_file.source.name,
+                str(planned_file.source),
+                str(planned_file.destination),
+                status,
+                planned_file.reason,
+            ]
+            self._row_by_source[str(planned_file.source)] = len(self._rows)
+            self._rows.append(row)
+        self.endResetModel()
+
+    def update_results(self, results) -> None:
+        changed_rows: list[int] = []
+        for result in results:
+            row_number = self._row_by_source.get(str(result.source))
+            if row_number is None:
+                continue
+            row = self._rows[row_number]
+            row[3] = result.status.capitalize()
+            row[4] = result.reason
+            changed_rows.append(row_number)
+
+        if not changed_rows:
+            return
+        changed_rows = sorted(set(changed_rows))
+        start = previous = changed_rows[0]
+        for row_number in changed_rows[1:]:
+            if row_number != previous + 1:
+                self.dataChanged.emit(
+                    self.index(start, 3),
+                    self.index(previous, 4),
+                    [Qt.ItemDataRole.DisplayRole],
+                )
+                start = row_number
+            previous = row_number
+        self.dataChanged.emit(
+            self.index(start, 3),
+            self.index(previous, 4),
+            [Qt.ItemDataRole.DisplayRole],
+        )
+
+
+class FileResultsProxyModel(QSortFilterProxyModel):
+    """Search and status filtering without hiding or rebuilding thousands of rows."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._search_text = ""
+        self._status_filter = "All statuses"
+        self.setDynamicSortFilter(True)
+
+    def set_filters(self, search_text: str, status_filter: str) -> None:
+        self._search_text = search_text.strip().casefold()
+        self._status_filter = status_filter
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex) -> bool:
+        model = self.sourceModel()
+        if model is None:
+            return True
+        status = str(model.index(source_row, 3, source_parent).data() or "")
+        if self._status_filter != "All statuses" and status != self._status_filter:
+            return False
+        if not self._search_text:
+            return True
+        for column in range(model.columnCount(source_parent)):
+            value = str(model.index(source_row, column, source_parent).data() or "")
+            if self._search_text in value.casefold():
+                return True
+        return False
+
+
 class Worker(QObject):
     """Run scanning and transfers off the GUI thread."""
 
     scan_progress = Signal(int, str)
     plan_ready = Signal(object)
-    file_updated = Signal(object, int, int)
+    files_updated = Signal(object)
     transfer_updated = Signal(int, int, float, int, int)
     finished = Signal(object, object)
     failed = Signal(str)
@@ -86,23 +204,51 @@ class Worker(QObject):
     def run(self) -> None:
         try:
             last_scan_emit = 0.0
+            last_scan_emitted_count = 0
 
             def scan_callback(count: int, path: Path) -> None:
-                nonlocal last_scan_emit
+                nonlocal last_scan_emit, last_scan_emitted_count
                 now = time.monotonic()
-                # Avoid flooding Qt's event queue for drives with very large file
-                # counts. Emit the first item, then at most ~10 times per second or
-                # every 250 files, whichever provides the next useful update.
-                if count == 1 or count % 250 == 0 or now - last_scan_emit >= 0.1:
+                # Strict time-based throttling: a fast SSD or a warm filesystem
+                # cache must not flood the GUI event queue with scan notifications.
+                if count == 1 or now - last_scan_emit >= 0.1:
                     self.scan_progress.emit(count, str(path))
                     last_scan_emit = now
+                    last_scan_emitted_count = count
+
+            def emit_scan_complete(count: int) -> None:
+                if count != last_scan_emitted_count:
+                    self.scan_progress.emit(count, "")
+
+            def run_plan_ready(plan) -> None:
+                emit_scan_complete(len(plan))
+                self.plan_ready.emit(plan)
+
+            pending_updates: list[tuple[object, int, int]] = []
+            last_file_emit = 0.0
+
+            def flush_file_updates() -> None:
+                nonlocal last_file_emit
+                if pending_updates:
+                    self.files_updated.emit(pending_updates.copy())
+                    pending_updates.clear()
+                    last_file_emit = time.monotonic()
+
+            def file_callback(result, done: int, total: int, _summary) -> None:
+                pending_updates.append((result, done, total))
+                now = time.monotonic()
+                # Batch terminal states for large collections. A long-running
+                # current file still gets its initial "Copying" state promptly.
+                if now - last_file_emit >= 0.1:
+                    flush_file_updates()
+
             if self.preview:
                 plan, _, _, _ = create_plan(
                     self.sources,
                     self.destination,
                     scan_progress=scan_callback,
                 )
-                self.plan_ready.emit(plan)
+                run_plan_ready(plan)
                 self.finished.emit(None, plan)
                 return
 
@@ -112,15 +258,14 @@ class Worker(QObject):
                 self.destination,
                 logger=logger,
                 cancel_event=self.cancel_event,
-                plan_ready=self.plan_ready.emit,
+                plan_ready=run_plan_ready,
                 scan_progress=scan_callback,
-                file_progress=lambda result, done, total, _summary: self.file_updated.emit(
-                    result, done, total
-                ),
+                file_progress=file_callback,
                 transfer_progress=lambda copied, total_bytes, elapsed, done, total: (
                     self.transfer_updated.emit(copied, total_bytes, elapsed, done, total)
                 ),
             )
+            flush_file_updates()
             self.finished.emit(summary, plan)
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -131,7 +276,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Storage Organizer")
         self.resize(1180, 800)
-        self._file_rows: dict[str, int] = {}
         self._operation_started = 0.0
         self._last_transfer_metrics = (0, 0, 0.0, 0, 0)
 
@@ -212,7 +356,11 @@ class MainWindow(QMainWindow):
         filter_row = QHBoxLayout()
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Filter files by name, path, or details…")
-        self.search_edit.textChanged.connect(self.apply_results_filter)
+        self._filter_timer = QTimer(self)
+        self._filter_timer.setSingleShot(True)
+        self._filter_timer.setInterval(150)
+        self._filter_timer.timeout.connect(self.apply_results_filter)
+        self.search_edit.textChanged.connect(self.schedule_results_filter)
         self.status_filter = QComboBox()
         self.status_filter.addItems(
             ["All statuses", "Pending", "Copying", "Copied", "Skipped", "Duplicate", "Error", "Cancelled"]
@@ -222,10 +370,11 @@ class MainWindow(QMainWindow):
         filter_row.addWidget(self.status_filter)
         current_layout.addLayout(filter_row)
 
-        self.results_table = QTableWidget(0, 5)
-        self.results_table.setHorizontalHeaderLabels(
-            ["File", "Source", "Destination", "Status", "Details"]
-        )
+        self.results_model = FileResultsTableModel(self)
+        self.results_proxy = FileResultsProxyModel(self)
+        self.results_proxy.setSourceModel(self.results_model)
+        self.results_table = QTableView()
+        self.results_table.setModel(self.results_proxy)
         self.results_table.setAlternatingRowColors(True)
         self.results_table.setWordWrap(False)
         self.results_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -370,8 +519,7 @@ class MainWindow(QMainWindow):
         self.cancel_button.setEnabled(not preview)
         self.settings_button.setEnabled(False)
         self.output.clear()
-        self.results_table.setRowCount(0)
-        self._file_rows.clear()
+        self.results_model.set_plan([])
         self.search_edit.clear()
         self.status_filter.setCurrentIndex(0)
         self.progress.setRange(0, 0)
@@ -391,7 +539,7 @@ class MainWindow(QMainWindow):
         self.thread.started.connect(self.worker.run)
         self.worker.scan_progress.connect(self.on_scan_progress)
         self.worker.plan_ready.connect(self.on_plan_ready)
-        self.worker.file_updated.connect(self.on_file_updated)
+        self.worker.files_updated.connect(self.on_files_updated)
         self.worker.transfer_updated.connect(self.on_transfer_updated)
         self.worker.finished.connect(self.on_finished)
         self.worker.failed.connect(self.on_failed)
@@ -402,50 +550,33 @@ class MainWindow(QMainWindow):
 
     def on_scan_progress(self, count: int, path: str) -> None:
         self.status_label.setText("Scanning and planning files…")
-        self.metrics_label.setText(f"Discovered {count:,} files · Latest: {path}")
+        detail = f" · Latest: {path}" if path else " · Scan complete"
+        self.metrics_label.setText(f"Discovered {count:,} files{detail}")
 
     def on_plan_ready(self, plan) -> None:
         self.progress.setRange(0, max(1, len(plan)))
         self.progress.setValue(0)
-        self.results_table.setUpdatesEnabled(False)
-        self.results_table.setRowCount(len(plan))
-        self._file_rows.clear()
+        self.results_model.set_plan(plan)
         copy_count = 0
         copy_bytes = 0
         skip_count = 0
         duplicate_count = 0
         error_count = 0
 
-        for row, planned_file in enumerate(plan):
+        for planned_file in plan:
             if planned_file.action == "copy":
-                status = "Pending"
                 copy_count += 1
                 try:
                     copy_bytes += planned_file.source.stat().st_size
                 except OSError:
                     pass
             elif planned_file.action == "error":
-                status = "Error"
                 error_count += 1
             elif planned_file.skip_reason == "source_duplicate":
-                status = "Duplicate"
                 duplicate_count += 1
             else:
-                status = "Skipped"
                 skip_count += 1
 
-            values = (
-                planned_file.source.name,
-                str(planned_file.source),
-                str(planned_file.destination),
-                status,
-                planned_file.reason,
-            )
-            for column, value in enumerate(values):
-                self.results_table.setItem(row, column, QTableWidgetItem(value))
-            self._file_rows[str(planned_file.source)] = row
-
-        self.results_table.setUpdatesEnabled(True)
         self.status_label.setText(f"Plan ready · {len(plan):,} files")
         self.metrics_label.setText(
             f"To copy: {copy_count:,} · Already present: {skip_count:,} · "
@@ -453,19 +584,13 @@ class MainWindow(QMainWindow):
             f"Copy size: {self._format_bytes(copy_bytes)}"
         )
 
-    def on_file_updated(self, file_result, done: int, total: int) -> None:
-        row = self._file_rows.get(str(file_result.source))
-        if row is not None:
-            status_item = self.results_table.item(row, 3)
-            details_item = self.results_table.item(row, 4)
-            if status_item is not None:
-                status_item.setText(file_result.status.capitalize())
-            if details_item is not None:
-                details_item.setText(file_result.reason)
+    def on_files_updated(self, updates) -> None:
+        if not updates:
+            return
+        self.results_model.update_results(result for result, _done, _total in updates)
+        done, total = updates[-1][1], updates[-1][2]
         if total and self._last_transfer_metrics[1] == 0:
             self.progress.setValue(min(done, total))
-        if row is not None:
-            self.results_table.setRowHidden(row, not self._row_matches_filter(row))
 
     def on_transfer_updated(
         self,
@@ -579,22 +704,17 @@ class MainWindow(QMainWindow):
                 self.history_table.setItem(row, column, QTableWidgetItem(value))
         self.history_table.resizeRowsToContents()
 
-    def apply_results_filter(self) -> None:
-        for row in range(self.results_table.rowCount()):
-            self.results_table.setRowHidden(row, not self._row_matches_filter(row))
+    def schedule_results_filter(self, *_args) -> None:
+        # Debounce text input so large proxy models are not rescanned for every
+        # keystroke while a user is entering a filename or path.
+        self._filter_timer.start()
 
-    def _row_matches_filter(self, row: int) -> bool:
-        query = self.search_edit.text().strip().casefold()
-        selected_status = self.status_filter.currentText()
-        values = [
-            self.results_table.item(row, column).text()
-            if self.results_table.item(row, column) is not None
-            else ""
-            for column in range(self.results_table.columnCount())
-        ]
-        status_matches = selected_status == "All statuses" or values[3] == selected_status
-        query_matches = not query or any(query in value.casefold() for value in values)
-        return status_matches and query_matches
+    def apply_results_filter(self) -> None:
+        self._filter_timer.stop()
+        self.results_proxy.set_filters(
+            self.search_edit.text(),
+            self.status_filter.currentText(),
+        )
 
     def on_failed(self, message: str) -> None:
         self.status_label.setText("Operation failed")

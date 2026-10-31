@@ -5,6 +5,10 @@
 - Added explicit per-file cancellation and error outcomes, plus deterministic source traversal.
 - Added multi-folder GUI source management, scan and byte-transfer progress with throughput/ETA, and file-result search/status filters.
 - Added a GUI settings dialog with validated atomic configuration saving and a local history of the 10 latest operations.
+- Added a deterministic `os.scandir` traversal path that reduces repeated filesystem metadata calls during large scans.
+- Replaced the current-operation `QTableWidget` with a virtualized Qt table model and proxy filtering for large result sets.
+- Batched per-file GUI updates and rate-limited byte-progress notifications to reduce GUI event-queue pressure.
+- Added a disposable large-dataset benchmark for scan, plan, memory, and optional verified-copy throughput.
 
 # Changelog
 

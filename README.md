@@ -182,6 +182,8 @@ python -m pytest --cov=storage_organizer --cov-report=term-missing
 
 CI runs these tests on Windows, macOS, and Ubuntu for Python 3.11, 3.12, 3.13, and 3.14, then smoke-tests the CLI and headless GUI initialization. The tests exercise classification, deterministic recursive scanning, path safety, dry-run, category/date routing, destination skips versus source duplicates, per-file success/error/cancellation outcomes, scan/transfer progress, filename conflicts, copy verification, repeat runs, configuration validation, preference/history persistence, and CLI JSON results.
 
+For large synthetic workloads, run `python scripts/benchmark_large_dataset.py --files 10000 --file-size 4096`. Add `--copy` to include verified transfer throughput, `--track-memory` to sample planning allocations (with profiling overhead), or `--json` for machine-readable results. The benchmark creates and removes its own temporary dataset; it does not read real source drives.
+
 ## Production-readiness checklist
 
 See [docs/production-readiness.md](docs/production-readiness.md) for the release checklist, safeguards, and remaining platform/filesystem limitations. CI tests Windows, macOS, and Ubuntu across Python 3.11, 3.12, 3.13, and 3.14. It runs unit and integration tests, CLI and synthetic end-to-end smoke tests, headless Qt GUI initialization, source compilation, distribution builds, dependency consistency checks, and a guard against tracked media or binary fixtures.

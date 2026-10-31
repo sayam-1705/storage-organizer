@@ -38,11 +38,13 @@ jobs:
         run: storage-organizer --help
       - name: End-to-end smoke test with generated synthetic files
         run: python scripts/run_demo_smoke.py
+      - name: Smoke-test large-dataset benchmark tooling
+        run: python scripts/benchmark_large_dataset.py --files 500 --file-size 256 --directories 10 --copy
       - name: Smoke-test GUI initialization without opening a window
         env:
           QT_QPA_PLATFORM: offscreen
           QT_DEBUG_PLUGINS: "1"
-        run: python -c "import storage_organizer.gui; from PySide6.QtWidgets import QApplication; app = QApplication([]); print('Qt GUI initialization passed')"
+        run: python -c "from storage_organizer.gui import MainWindow; from PySide6.QtWidgets import QApplication; app = QApplication([]); window = MainWindow(); window.close(); print('Qt MainWindow initialization passed')"
       - name: Compile source files
         run: python -m compileall -q src
       - name: Build source and wheel distributions

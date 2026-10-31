@@ -33,3 +33,38 @@ def test_scanner_does_not_follow_symlinked_directories(tmp_path, make_file):
     except (OSError, NotImplementedError):
         return
     assert list(scan_files([source])) == []
+
+
+def test_scanner_preserves_deterministic_depth_first_order(tmp_path, make_file):
+    source = tmp_path / "source"
+    make_file(source / "z-root.txt", b"z")
+    make_file(source / "a-root.txt", b"a")
+    make_file(source / "z-folder" / "z-file.txt", b"z")
+    make_file(source / "a-folder" / "b-file.txt", b"b")
+    make_file(source / "a-folder" / "a-file.txt", b"a")
+
+    found = [path.relative_to(source).as_posix() for path in scan_files([source])]
+
+    assert found == [
+        "a-root.txt",
+        "z-root.txt",
+        "a-folder/a-file.txt",
+        "a-folder/b-file.txt",
+        "z-folder/z-file.txt",
+    ]
+
+
+def test_scanner_handles_unreadable_or_disappearing_directory(tmp_path, monkeypatch):
+    import storage_organizer.scanner as scanner
+
+    source = tmp_path / "source"
+    source.mkdir()
+    real_scandir = scanner.os.scandir
+
+    def selective_scandir(path):
+        if Path(path) == source:
+            raise PermissionError("simulated directory access failure")
+        return real_scandir(path)
+
+    monkeypatch.setattr(scanner.os, "scandir", selective_scandir)
+    assert list(scan_files([source])) == []

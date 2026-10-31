@@ -559,3 +559,29 @@ def test_transfer_progress_handles_zero_byte_files(tmp_path, make_file):
     assert summary.copied == 1
     assert events[-1][0:2] == (0, 0)
     assert events[-1][3:] == (1, 1)
+
+
+def test_transfer_progress_notifications_are_rate_limited_and_final_is_emitted(
+    tmp_path, make_file, monkeypatch
+):
+    import storage_organizer.transfer as transfer
+
+    source = tmp_path / "source"
+    make_file(source / "large.bin", b"x" * (12 * 1024 * 1024))
+    plan = build_plan([source], tmp_path / "destination", config_copy())
+    events = []
+
+    # Freeze time during chunk callbacks so only the mandatory initial/final
+    # progress notifications are emitted, not every 1 MiB copy chunk.
+    monkeypatch.setattr(transfer.time, "monotonic", lambda: 100.0)
+    summary = execute_plan(
+        plan,
+        transfer_progress=lambda copied, total_bytes, elapsed, done, total: events.append(
+            (copied, total_bytes, done, total)
+        ),
+    )
+
+    assert summary.copied == 1
+    assert len(events) == 2
+    assert events[0] == (0, 12 * 1024 * 1024, 0, 1)
+    assert events[-1] == (12 * 1024 * 1024, 12 * 1024 * 1024, 1, 1)
