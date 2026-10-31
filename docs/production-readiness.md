@@ -40,10 +40,12 @@ The v1.0.2 release build and installer QA are complete. The items below distingu
 
 ## Repository maintenance validation
 
-- [x] Main-branch CI passed on the 12-job Python/OS matrix and four native frozen-desktop smoke jobs.
+- [x] Latest main-branch CI run passed all 16 jobs: 12 Python/OS matrix jobs and four native frozen-desktop smoke jobs.
 - [x] CodeQL completed successfully on the main branch and uploaded its analysis results.
-- [x] Dependency Graph was enabled in repository settings; the two open Dependabot action-update pull requests then passed Dependency Review, CI, and CodeQL.
-- [x] Active GitHub rulesets protect `main` and `v*` release tags. The `main` ruleset currently requires the 12 Python matrix checks; adding desktop smoke, CodeQL, and Dependency Review as required checks remains a recommended administrative improvement.
+- [x] Dependency Graph is enabled in repository settings.
+- [x] Dependabot updates for `actions/setup-python@v7` and `actions/checkout@v7` passed CI, CodeQL, and Dependency Review and were successfully merged.
+- [x] Active GitHub rulesets protect `main` and `v*` release tags.
+- [x] The `Protect main` ruleset requires all 18 status checks: 12 Python matrix checks, four native desktop checks, CodeQL, and Dependency Review.
 
 ## Known limits
 
