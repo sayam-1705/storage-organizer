@@ -9,6 +9,7 @@
 - Replaced the current-operation `QTableWidget` with a virtualized Qt table model and proxy filtering for large result sets.
 - Batched per-file GUI updates and rate-limited byte-progress notifications to reduce GUI event-queue pressure.
 - Added a disposable large-dataset benchmark for scan, plan, memory, and optional verified-copy throughput.
+- Fixed the synthetic benchmark on macOS by resolving the OS temporary-directory alias before exercising safe-copy path checks.
 
 # Changelog
 

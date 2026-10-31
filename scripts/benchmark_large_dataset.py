@@ -65,7 +65,10 @@ def run_benchmark(
     track_memory: bool = False,
 ) -> dict:
     with tempfile.TemporaryDirectory(prefix="storage-organizer-benchmark-") as temporary:
-        root = Path(temporary)
+        # macOS commonly exposes TMPDIR through /var, a symlink to /private/var.
+        # Resolve the temporary root so the transfer layer does not mistake this
+        # trusted OS alias for a symlink inserted into the destination tree.
+        root = Path(temporary).resolve()
         source = root / "source"
         destination = root / "destination"
         source.mkdir()
@@ -114,6 +117,7 @@ def run_benchmark(
                 "copied": summary.copied,
                 "skipped": summary.skipped_identical,
                 "failed": summary.failed,
+                "copy_errors": summary.errors,
                 "copy_mib_per_second": round(
                     (summary.copied * file_size / (1024 * 1024)) / copy_seconds, 2
                 ) if copy_seconds else None,
