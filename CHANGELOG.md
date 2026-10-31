@@ -1,4 +1,6 @@
-## Unreleased
+# Changelog
+
+## 1.0.2 — Desktop release
 
 - Added structured per-file operation results across planning, transfers, CLI JSON output, and the desktop GUI.
 - Distinguished files already present in the destination from duplicates within the selected source set.
@@ -14,8 +16,8 @@
 - Added release artifact validation, SHA-256 checksums, and installation/build documentation for native packages.
 - Gated native release publication on an explicit Qt/PySide6 license-review approval variable.
 - Fixed the synthetic benchmark on macOS by resolving the OS temporary-directory alias before exercising safe-copy path checks.
-
-# Changelog
+- Include the validated desktop installer packages.
+- Include packaging and release improvements.
 
 ## 1.0.1 — Production-readiness hardening
 

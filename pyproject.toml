@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "storage-organizer"
-version = "1.0.1"
+version = "1.0.2"
 description = "Offline, cross-platform organizer for files on local and removable storage"
 readme = "README.md"
 requires-python = ">=3.11"
