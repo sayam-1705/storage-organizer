@@ -29,14 +29,14 @@ The v1.0.2 release build and installer QA are complete. The items below distingu
 - [x] CI passes on Ubuntu, Windows, and macOS for every Python version in the workflow matrix.
 - [x] GUI initialization smoke test passes on all CI operating systems.
 - [x] Review the output of `python -m pytest --cov=storage_organizer --cov-report=term-missing`.
-- [ ] Manually test a small disposable dataset on representative physical filesystems (for example NTFS, exFAT, APFS, and ext4). CI uses generated files and does not replace this check.
-- [ ] Test a full destination, unplug/reconnect behavior, and interruption during a large-file copy on expendable storage.
+- [x] Manually test a small disposable dataset on representative physical filesystems (for example NTFS, exFAT, APFS, and ext4). CI uses generated files and does not replace this check.
+- [x] Test a full destination, unplug/reconnect behavior, and interruption during a large-file copy on expendable storage.
 - [x] Confirm generated wheel/sdist contents do not contain private files or media assets.
 - [x] Build and smoke-test frozen desktop bundles on the native target runners.
 - [x] Validate the Windows installer, both macOS disk images, and Linux AppImage in the v1.0.2 tagged release workflow.
 - [x] Publish SHA-256 checksums for all seven release assets and verify the checksum file is attached to the release.
-- [ ] Review third-party license obligations and publish any required notices/source/relinking materials for bundled Qt/PySide6 components. Do not treat successful installer testing as a substitute for this review.
-- [ ] Complete representative physical-filesystem and interruption testing before claiming support for those scenarios.
+- [x] Review third-party license obligations and publish any required notices/source/relinking materials for bundled Qt/PySide6 components. Do not treat successful installer testing as a substitute for this review.
+- [x] Complete representative physical-filesystem and interruption testing before claiming support for those scenarios.
 
 ## Repository maintenance validation
 
